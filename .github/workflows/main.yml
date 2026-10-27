@@ -1,0 +1,51 @@
+name: JsAdmin - deployment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  main_deployment:
+    if: github.ref == 'refs/heads/main'
+    runs-on: main
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          clean: false
+
+      - name: Copy files to Production
+        run: |
+          rsync -rlpDvc --itemize-changes \
+            --exclude='docker-compose.yml' \
+            --no-owner \
+            ./ /mnt/300disk/ukss-sms-js-admin/production/
+
+      - name: Rebuild Production containers
+        run: |
+          cd /mnt/300disk/ukss-sms-js-admin/production
+          docker-compose --env-file .env -f docker-compose.yml build --no-cache
+          docker-compose --env-file .env -f docker-compose.yml up -d
+
+  staging_deployment:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: staging
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          clean: false
+
+      - name: Copy files to Staging
+        run: |
+          rsync -rlpDvc --itemize-changes \
+            --exclude='docker-compose.yml' \
+            --no-owner \
+            ./ /mnt/300disk/ukss-sms-js-admin/staging/
+
+      - name: Rebuild Staging containers
+        run: |
+          cd /mnt/300disk/ukss-sms-js-admin/staging
+          docker-compose --env-file .env -f docker-compose.yml build --no-cache
+          docker-compose --env-file .env -f docker-compose.yml up -d

@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs (rebuilt in Docker)
+dist
+**/dist
+.turbo
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation (not needed in image)
+*.md
+documentation
+DOCKER.md
+PRODUCTION.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing (not needed in production image)
+e2e
+coverage
+test-results
+playwright-report
+.playwright
+playwright.config.ts
+
+# Environment files (use docker-compose env vars)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary
+tmp
+temp
+*.tmp
+
+# Docker files (avoid recursive copy)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

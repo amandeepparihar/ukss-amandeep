@@ -1,0 +1,90 @@
+# Dependencies
+node_modules
+.pnpm-store
+.understand-anything
+# Build outputs
+dist
+build
+.next
+.turbo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.staging
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+/uploads/
+/apps/api/uploads/
+/apps/api/fonts/
+/fonts/
+
+# OS
+.DS_Store
+Thumbs.db
+*.lnk
+nul
+
+# Logs (runtime output only — anchored to the real log dir so it does NOT
+# match source directories that happen to be named 'logs', e.g.
+# apps/api/src/modules/logs/ or apps/web/src/pages/logs/)
+/apps/api/logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+test-results/
+playwright-report/
+playwright-report-comparison/
+playwright/.cache/
+e2e/comparison/screenshots/
+e2e/comparison/test-results/
+e2e/.auth/
+
+# Prisma
+*.db
+*.db-journal
+
+# Misc
+.cache
+*.tsbuildinfo
+core
+
+# Claude Code
+.claude
+.claude/settings.local.json
+
+# Auto Claude data directory
+.auto-claude/
+
+# Auto Claude generated files
+.auto-claude-security.json
+.auto-claude-status
+.claude_settings.json
+.worktrees/
+.security-key
+logs/security/
+
+.codegraph
+
+.claude/bugs
+
+/apps/api/fonts/
+/apps/api/uploads/
+/fonts/
+/uploads/
+
+# Generated artifacts / local scratch — never commit (prevents broad `git add` from sweeping them)
+graphify-out/
+.claude.backup-*/
+.venv/
+/apps/api/data/

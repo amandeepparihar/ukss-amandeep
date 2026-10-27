@@ -1,0 +1,24 @@
+/**
+ * REQ-02-020: Row color coding CSS classes.
+ * 19 priority-based row colors matching the PHP implementation.
+ */
+
+.dataTableONBACKORDER { background-color: #d4edda !important; }
+.dataTableRowAmazonPrime { background-color: #e3f2fd !important; }
+.dataTableRowAmazonPremium { background-color: #bbdefb !important; }
+.dataTableRowDHL { background-color: #fff9c4 !important; }
+.dataTableRowSuperSaver { background-color: #f3e5f5 !important; }
+.dataTableRowAmazon { background-color: #fff3e0 !important; }
+.dataTableRowMplaza { background-color: #fce4ec !important; }
+.dataTableRowClickAndCollect { background-color: #e8f5e9 !important; }
+.dataTableRowTesco { background-color: #e0f2f1 !important; }
+.dataTableRowEbay { background-color: #ede7f6 !important; }
+.dataTableRowRakuten1 { background-color: #fbe9e7 !important; }
+.dataTableRowLazada1 { background-color: #e0f7fa !important; }
+.dataTableRowPriceminister1 { background-color: #f1f8e9 !important; }
+.dataTableRowGosport1 { background-color: #fff8e1 !important; }
+.dataTableRowCatch { background-color: #f3e5f5 !important; }
+.dataTableRowTeamzo { background-color: #e8eaf6 !important; }
+.dataTableRowAirosportswear { background-color: #fafafa !important; }
+.dataTableRowFruugo { background-color: #efebe9 !important; }
+.dataTableRow { background-color: transparent; }

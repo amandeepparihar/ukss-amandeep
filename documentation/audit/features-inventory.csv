@@ -1,0 +1,99 @@
+FeatureID,Feature Name,Category,URL,API Endpoint,Files,Functionality,Status,Notes
+F001,Health Check,Infrastructure,N/A,GET /health,apps/api/src/app.ts,Returns server status timestamp and version,Implemented,No auth required
+F002,User Login,Authentication,/login,POST /api/auth/login,"apps/web/src/pages/auth/LoginPage.tsx, apps/api/src/modules/auth/auth.routes.ts",Email/password authentication with remember me option,Implemented,Rate limited 5/min
+F003,Two-Factor Login,Authentication,/login (2FA step),POST /api/auth/2fa/login,apps/api/src/modules/auth/auth.routes.ts,Verify 2FA code during login process,Implemented,Rate limited 5/min
+F004,User Logout,Authentication,N/A (via UI),POST /api/auth/logout,"apps/api/src/modules/auth/auth.routes.ts, apps/web/src/hooks/useAuth.ts",Clear session and refresh token,Implemented,Requires authentication
+F005,Token Refresh,Authentication,N/A (automatic),POST /api/auth/refresh,apps/api/src/modules/auth/auth.routes.ts,Refresh access token using refresh token cookie,Implemented,Rate limited 30/min
+F006,Forgot Password,Authentication,/forgot-password,POST /api/auth/forgot-password,"apps/web/src/pages/auth/ForgotPasswordPage.tsx, apps/api/src/modules/auth/auth.routes.ts",Request password reset email,Implemented,Rate limited 3/min
+F007,Reset Password,Authentication,/reset-password,POST /api/auth/reset-password,"apps/web/src/pages/auth/ResetPasswordPage.tsx, apps/api/src/modules/auth/auth.routes.ts",Reset password with token from email,Implemented,Rate limited 5/min
+F008,Get Current User,Authentication,N/A (via hooks),GET /api/auth/me,apps/api/src/modules/auth/auth.routes.ts,Get authenticated user profile data,Implemented,Requires authentication
+F009,Update Profile,Profile,/profile,PUT /api/auth/me,"apps/web/src/pages/ProfilePage.tsx, apps/api/src/modules/auth/auth.routes.ts",Update user profile (name),Implemented,Requires authentication
+F010,Change Password,Profile,/profile,PUT /api/auth/me/password,apps/api/src/modules/auth/auth.routes.ts,Change current user password,Implemented,Requires current password
+F011,Get Active Sessions,Profile,/profile,GET /api/auth/sessions,apps/api/src/modules/auth/auth.routes.ts,List user's active sessions,Implemented,Requires authentication
+F012,Revoke Session,Profile,/profile,DELETE /api/auth/sessions/:id,apps/api/src/modules/auth/auth.routes.ts,Terminate a specific session,Implemented,Requires authentication
+F013,Setup 2FA,Profile,/profile,POST /api/auth/2fa/setup,"apps/web/src/pages/ProfilePage.tsx, apps/api/src/modules/auth/auth.routes.ts",Generate 2FA secret and QR code,Implemented,Requires authentication
+F014,Verify 2FA,Profile,/profile,POST /api/auth/2fa/verify,apps/api/src/modules/auth/auth.routes.ts,Verify and enable 2FA with code,Implemented,Requires authentication
+F015,Disable 2FA,Profile,/profile,DELETE /api/auth/2fa/disable,apps/api/src/modules/auth/auth.routes.ts,Disable 2FA with password confirmation,Implemented,Requires authentication
+F016,Backup Codes Status,Profile,/profile,GET /api/auth/2fa/backup-codes/status,apps/api/src/modules/auth/auth.routes.ts,Check backup codes availability,Implemented,Requires authentication
+F017,Regenerate Backup Codes,Profile,/profile,POST /api/auth/2fa/backup-codes/regenerate,apps/api/src/modules/auth/auth.routes.ts,Generate new backup codes with password,Implemented,Requires authentication
+F018,Get Trusted Devices,Security,N/A (page not routed),GET /api/auth/devices,"apps/web/src/pages/security/TrustedDevicesPage.tsx, apps/api/src/modules/auth/devices.routes.ts",List user's trusted devices,Implemented,UI page exists but NOT routed
+F019,Remove Trusted Device,Security,N/A (page not routed),DELETE /api/auth/devices/:id,apps/api/src/modules/auth/devices.routes.ts,Remove a trusted device,Implemented,UI page exists but NOT routed
+F020,Trust Current Device,Security,N/A (page not routed),POST /api/auth/devices/trust,apps/api/src/modules/auth/devices.routes.ts,Mark current device as trusted,Implemented,UI page exists but NOT routed
+F021,Login History,Security,N/A (page not routed),GET /api/auth/login-history,"apps/web/src/pages/security/LoginHistoryPage.tsx, apps/api/src/modules/auth/devices.routes.ts",View login history with pagination,Implemented,UI page exists but NOT routed
+F022,Current Device Info,Security,N/A,GET /api/auth/devices/current,apps/api/src/modules/auth/devices.routes.ts,Get current device fingerprint,Implemented,Requires authentication
+F023,List Users,User Management,/users,GET /api/users,"apps/web/src/pages/users/UsersPage.tsx, apps/api/src/modules/users/users.routes.ts",List all users with pagination/filtering,Implemented,Requires users:view permission
+F024,Get User,User Management,/users,GET /api/users/:id,apps/api/src/modules/users/users.routes.ts,Get single user by ID,Implemented,Requires users:view permission
+F025,Create User,User Management,/users,POST /api/users,"apps/web/src/pages/users/UserFormDialog.tsx, apps/api/src/modules/users/users.routes.ts",Create new user account,Implemented,Requires users:create permission
+F026,Update User,User Management,/users,PUT /api/users/:id,"apps/web/src/pages/users/UserFormDialog.tsx, apps/api/src/modules/users/users.routes.ts",Update user details,Implemented,Requires users:edit permission
+F027,Delete User,User Management,/users,DELETE /api/users/:id,apps/api/src/modules/users/users.routes.ts,Delete user account,Implemented,Requires users:delete permission
+F028,Bulk User Delete,User Management,/users,N/A (multiple DELETE calls),apps/web/src/pages/users/UsersPage.tsx,Delete multiple selected users,Implemented,Uses row selection
+F029,List Roles,Role Management,/roles,GET /api/roles,"apps/web/src/pages/roles/RolesPage.tsx, apps/api/src/modules/roles/roles.routes.ts",List all roles with permissions,Implemented,Requires roles:view permission
+F030,Get Role,Role Management,/roles,GET /api/roles/:id,apps/api/src/modules/roles/roles.routes.ts,Get single role by ID,Implemented,Requires roles:view permission
+F031,Create Role,Role Management,/roles,POST /api/roles,"apps/web/src/pages/roles/RoleFormDialog.tsx, apps/api/src/modules/roles/roles.routes.ts",Create new role,Implemented,Requires roles:create permission
+F032,Update Role,Role Management,/roles,PUT /api/roles/:id,"apps/web/src/pages/roles/RoleFormDialog.tsx, apps/api/src/modules/roles/roles.routes.ts",Update role details,Implemented,Requires roles:edit permission
+F033,Delete Role,Role Management,/roles,DELETE /api/roles/:id,apps/api/src/modules/roles/roles.routes.ts,Delete role,Implemented,Requires roles:delete permission
+F034,Update Role Permissions,Role Management,/roles,PUT /api/roles/:id/permissions,"apps/web/src/pages/roles/PermissionsDialog.tsx, apps/api/src/modules/roles/roles.routes.ts",Update permissions for a role,Implemented,Requires roles:edit permission
+F035,Get Menu Tree,Navigation,N/A (via AppShell),GET /api/menu,apps/api/src/modules/menu/menu.routes.ts,Get menu based on user permissions,Implemented,Requires authentication
+F036,Get All Menu Items,Menu Management,N/A (not in UI),GET /api/menu/all,apps/api/src/modules/menu/menu.routes.ts,Get all menu items (admin),Implemented,Requires menu:view permission
+F037,Create Menu Item,Menu Management,N/A (not in UI),POST /api/menu,apps/api/src/modules/menu/menu.routes.ts,Create new menu item,Implemented,Requires menu:create permission
+F038,Update Menu Item,Menu Management,N/A (not in UI),PUT /api/menu/:id,apps/api/src/modules/menu/menu.routes.ts,Update menu item,Implemented,Requires menu:edit permission
+F039,Delete Menu Item,Menu Management,N/A (not in UI),DELETE /api/menu/:id,apps/api/src/modules/menu/menu.routes.ts,Delete menu item,Implemented,Requires menu:delete permission
+F040,Reorder Menu Items,Menu Management,N/A (not in UI),POST /api/menu/reorder,apps/api/src/modules/menu/menu.routes.ts,Reorder multiple menu items,Implemented,Requires menu:edit permission
+F041,Upload File,File Management,/demos/file-upload,POST /api/files/upload,"apps/web/src/pages/demos/FileUploadDemo.tsx, apps/api/src/modules/files/files.routes.ts",Server-side file upload (max 10MB),Implemented,Requires authentication
+F042,Get Presigned URL,File Management,N/A,POST /api/files/presigned-upload,apps/api/src/modules/files/files.routes.ts,Get presigned URL for S3 upload,Implemented,Requires authentication
+F043,Confirm Upload,File Management,N/A,POST /api/files/confirm-upload,apps/api/src/modules/files/files.routes.ts,Confirm client-side upload,Implemented,Requires authentication
+F044,Get File,File Management,N/A,GET /api/files/:id,apps/api/src/modules/files/files.routes.ts,Get file metadata,Implemented,Owner or admin only
+F045,Download File,File Management,N/A,GET /api/files/:id/download,apps/api/src/modules/files/files.routes.ts,Get download URL,Implemented,Owner or admin only
+F046,List User Files,File Management,N/A,GET /api/files,apps/api/src/modules/files/files.routes.ts,List user's uploaded files,Implemented,Requires authentication
+F047,Delete File,File Management,N/A,DELETE /api/files/:id,apps/api/src/modules/files/files.routes.ts,Delete uploaded file,Implemented,Owner or admin only
+F048,List Audit Logs,Audit,/audit-logs,GET /api/audit-logs,"apps/web/src/pages/audit/AuditLogsPage.tsx, apps/api/src/modules/audit/audit.routes.ts",List audit logs with filtering,Implemented,Requires audit-logs:view permission
+F049,Get Audit Log,Audit,/audit-logs,GET /api/audit-logs/:id,apps/api/src/modules/audit/audit.routes.ts,Get single audit log detail,Implemented,Requires audit-logs:view permission
+F050,Audit Log Stats,Audit,N/A,GET /api/audit-logs/stats,apps/api/src/modules/audit/audit.routes.ts,Get audit statistics,Implemented,Requires audit-logs:view permission
+F051,Test Email Connection,Settings,/settings,GET /api/email/test-connection,apps/api/src/modules/email/email.routes.ts,Test email server connection,Implemented,Requires settings:view permission
+F052,Send Test Email,Settings,/settings,POST /api/email/send-test,"apps/web/src/pages/settings/EmailSettings.tsx, apps/api/src/modules/email/email.routes.ts",Send test email,Implemented,Requires settings:view permission
+F053,Export Data,Export,/demos/export,POST /api/exports,"apps/web/src/pages/demos/ExportDemo.tsx, apps/api/src/modules/exports/exports.routes.ts","Export data as CSV/XLSX/PDF",Implemented,Requires authentication
+F054,Preview Export,Export,/demos/export,POST /api/exports/preview,apps/api/src/modules/exports/exports.routes.ts,Preview export (first 5 rows),Implemented,Requires authentication
+F055,Get Export Resources,Export,N/A,GET /api/exports/resources,apps/api/src/modules/exports/exports.routes.ts,Get available export resources,Implemented,Requires authentication
+F056,List Announcements,Announcements,/announcements,GET /api/announcements,"apps/web/src/pages/announcements/AnnouncementsPage.tsx, apps/api/src/modules/announcements/announcements.routes.ts",List all announcements (admin),Implemented,Requires announcements:view permission
+F057,Get Active Announcements,Announcements,N/A (via AppShell),GET /api/announcements/active,apps/api/src/modules/announcements/announcements.routes.ts,Get active announcements for user,Implemented,Filtered by user role
+F058,Create Announcement,Announcements,/announcements,POST /api/announcements,"apps/web/src/pages/announcements/AnnouncementsPage.tsx, apps/api/src/modules/announcements/announcements.routes.ts",Create new announcement,Implemented,Requires announcements:create permission
+F059,Get Announcement,Announcements,/announcements,GET /api/announcements/:id,apps/api/src/modules/announcements/announcements.routes.ts,Get single announcement,Implemented,Requires announcements:view permission
+F060,Update Announcement,Announcements,/announcements,PUT /api/announcements/:id,"apps/web/src/pages/announcements/AnnouncementsPage.tsx, apps/api/src/modules/announcements/announcements.routes.ts",Update announcement,Implemented,Requires announcements:edit permission
+F061,Delete Announcement,Announcements,/announcements,DELETE /api/announcements/:id,apps/api/src/modules/announcements/announcements.routes.ts,Delete announcement,Implemented,Requires announcements:delete permission
+F062,Dismiss Announcement,Announcements,N/A,POST /api/announcements/:id/dismiss,apps/api/src/modules/announcements/announcements.routes.ts,Mark announcement as dismissed,Implemented,Requires authentication
+F063,Get Demo Categories,Demo,/demos/datatable,GET /api/demo/categories,apps/api/src/modules/demo/demo.routes.ts,Get product categories for filter,Implemented,Demo feature
+F064,Get Demo Statuses,Demo,/demos/datatable,GET /api/demo/statuses,apps/api/src/modules/demo/demo.routes.ts,Get product statuses for filter,Implemented,Demo feature
+F065,Get Demo Stats,Demo,/demos/datatable,GET /api/demo/products/stats,"apps/web/src/pages/demos/DataTableDemo.tsx, apps/api/src/modules/demo/demo.routes.ts",Get product statistics,Implemented,Demo feature
+F066,List Demo Products,Demo,/demos/datatable,GET /api/demo/products,"apps/web/src/pages/demos/DataTableDemo.tsx, apps/api/src/modules/demo/demo.routes.ts",List products with server-side operations,Implemented,Demo feature with 10M records
+F067,Export Demo Products,Demo,/demos/datatable,GET /api/demo/products/export,"apps/web/src/pages/demos/DataTableDemo.tsx, apps/api/src/modules/demo/demo.routes.ts",Export products as CSV/Excel,Implemented,Demo feature
+F068,Get Demo Product,Demo,N/A,GET /api/demo/products/:id,apps/api/src/modules/demo/demo.routes.ts,Get single product,Implemented,Demo feature
+F069,List All Settings,Settings,/settings,GET /api/settings,apps/api/src/modules/settings/settings.routes.ts,List all settings grouped by category,Implemented,Requires authentication
+F070,Get Settings by Category,Settings,/settings,GET /api/settings/category/:category,"apps/web/src/pages/settings/*.tsx, apps/api/src/modules/settings/settings.routes.ts",Get settings for a category,Implemented,Masks SECRET values
+F071,Get Single Setting,Settings,N/A,GET /api/settings/:key,apps/api/src/modules/settings/settings.routes.ts,Get single setting by key,Implemented,Requires authentication
+F072,Update Single Setting,Settings,N/A,PUT /api/settings/:key,apps/api/src/modules/settings/settings.routes.ts,Update single setting,Implemented,Requires authentication
+F073,Update Settings by Category,Settings,/settings,PUT /api/settings/category/:category,"apps/web/src/pages/settings/*.tsx, apps/api/src/modules/settings/settings.routes.ts",Bulk update category settings,Implemented,Skips masked secrets
+F074,Bulk Update Settings,Settings,N/A,POST /api/settings/bulk,apps/api/src/modules/settings/settings.routes.ts,Create/update multiple settings,Implemented,Requires authentication
+F075,Dashboard,Main UI,/,N/A,apps/web/src/pages/DashboardPage.tsx,Overview with stats cards,Implemented,Static data display
+F076,General Settings,Settings,/settings,GET/PUT /api/settings/category/general,apps/web/src/pages/settings/GeneralSettings.tsx,"Site name, description, maintenance mode, debug mode",Implemented,Tab in settings page
+F077,Email Settings,Settings,/settings,GET/PUT /api/settings/category/email,apps/web/src/pages/settings/EmailSettings.tsx,"SMTP/SendGrid/Mailgun/SES config, test email",Implemented,Tab in settings page
+F078,Security Settings,Settings,/settings,GET/PUT /api/settings/category/security,apps/web/src/pages/settings/SecuritySettings.tsx,"Password policy, session timeout, 2FA settings",Implemented,Tab in settings page
+F079,Notification Settings,Settings,/settings,N/A,apps/web/src/pages/settings/NotificationSettings.tsx,Notification preferences,Implemented,Tab in settings page
+F080,Form Demo,Demo,/demos/forms,GET /api/users (for combobox),apps/web/src/pages/demos/FormDemo.tsx,Showcase all form field types,Implemented,Demo feature
+F081,Notifications Demo,Demo,/demos/notifications,N/A,apps/web/src/pages/demos/NotificationsDemo.tsx,Toast and persistent notifications,Implemented,Demo feature
+F082,Export Demo,Demo,/demos/export,POST /api/exports,apps/web/src/pages/demos/ExportDemo.tsx,Export button and dialog components,Implemented,Demo feature
+F083,File Upload Demo,Demo,/demos/file-upload,POST /api/files/*,apps/web/src/pages/demos/FileUploadDemo.tsx,Drag-drop and button uploads,Implemented,Demo feature
+F084,Logging Demo,Demo,/demos/logging,N/A,apps/web/src/pages/demos/LoggingDemo.tsx,Pino logger documentation,Implemented,Documentation only
+F085,Queue Jobs Demo,Demo,/demos/queue-jobs,N/A,apps/web/src/pages/demos/QueueJobsDemo.tsx,BullMQ dashboard mockup,Implemented,Sample data only
+F086,Cron Jobs Demo,Demo,/demos/cron-jobs,N/A,apps/web/src/pages/demos/CronJobsDemo.tsx,Scheduled jobs dashboard mockup,Implemented,Sample data only
+F087,Demo Index,Demo,/demos,N/A,apps/web/src/pages/demos/DemoIndex.tsx,Landing page for all demos,Implemented,Navigation to demos
+F088,AppShell Layout,Layout,All protected routes,GET /api/menu,apps/web/src/components/layout/AppShell.tsx,"Sidebar, header, breadcrumbs, announcements",Implemented,Core layout component
+F089,Protected Routes,Auth,All protected routes,N/A,apps/web/src/App.tsx,Route guard for authenticated users,Implemented,Redirects to login if not authenticated
+F090,Public Routes,Auth,/login /forgot-password /reset-password,N/A,apps/web/src/App.tsx,Route guard for public pages,Implemented,Redirects to home if authenticated
+F091,Auth State Persistence,Auth,All pages,POST /api/auth/refresh,apps/web/src/stores/authStore.ts,Persist auth across page refresh,Implemented,Uses zustand persist + refresh token
+F092,Permission-based UI,Auth,All admin pages,N/A,"apps/web/src/hooks/useAuth.ts, apps/web/src/stores/authStore.ts",Show/hide UI based on permissions,Implemented,hasPermission/hasAnyPermission helpers
+F093,DataTable Component,Component,Multiple pages,N/A,apps/web/src/components/data-table/*.tsx,"Server-side pagination, sorting, filtering",Implemented,Reusable component
+F094,Form Components,Component,Multiple pages,N/A,apps/web/src/components/forms/*.tsx,"TextField, SelectField, SwitchField, etc.",Implemented,Reusable form fields
+F095,API Client,Infrastructure,All API calls,N/A,apps/web/src/lib/api.ts,Axios wrapper with interceptors,Implemented,Auto token refresh
+F096,Swagger Documentation,Infrastructure,/docs (dev only),N/A,apps/api/src/app.ts,OpenAPI documentation,Implemented,Development mode only
+F097,Rate Limiting,Infrastructure,All endpoints,N/A,apps/api/src/app.ts,100 requests/minute default,Implemented,Custom limits per endpoint
+F098,Error Handling,Infrastructure,All endpoints,N/A,apps/api/src/app.ts,Zod validation + API errors,Implemented,Structured error responses

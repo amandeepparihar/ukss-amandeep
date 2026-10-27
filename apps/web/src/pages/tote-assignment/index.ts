@@ -1,0 +1,1 @@
+export { ToteAssignmentPage } from './ToteAssignmentPage';

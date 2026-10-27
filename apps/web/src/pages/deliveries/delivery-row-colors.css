@@ -1,0 +1,396 @@
+/* Row background colours for the Deliveries grid — spec §7 priority order.
+ * Each state has one base hue. The row background uses a soft tint of that
+ * hue; the legend swatch shows the same base hue so the two visually agree.
+ *
+ * "Image in Dropbox" is deliberately a very light cyan so it doesn't clash
+ * with "Special" (a saturated blue).
+ *
+ * SlickGrid applies `cssClasses` from dataView.getItemMetadata both to the
+ * .slick-row container and each .slick-cell child, so we cover both. */
+
+:root {
+  /* Legacy parity — slick_grid.css `red_bg / pink_bg / etc.` (legacy SMS).
+   * We previously used Tailwind 200-tier tints which made "red" (#fecaca)
+   * and "pink" (#fecdd3) visually indistinguishable (rgb differs by ≤9).
+   * Operators couldn't tell a Submitted-for-Review row apart from an
+   * Unmapped one. The legacy view leans on bold, saturated colours so the
+   * priority order reads at a glance — matching that exactly here. */
+  --delivery-red:       #ff0000;  /* legacy `red_bg`: pure red */
+  --delivery-red-bold:  #b91c1c;
+  --delivery-lightblue:        #add8e6;  /* legacy `lightblue_bg`: CSS lightblue */
+  --delivery-lightblue-bold:   #38acec;
+  --delivery-green:     #71cf90;  /* legacy `green_bg` */
+  --delivery-green-bold:#22c55e;
+  --delivery-orange:    #ffa500;  /* legacy `orange_bg` (alpha stripped — bg already opaque) */
+  --delivery-orange-bold:#c2410c;
+  --delivery-pink:      #f7bab9;  /* legacy `pink_bg` */
+  --delivery-pink-bold: #e6796f;
+  --delivery-blue:      #38acec;  /* legacy `blue_bg` */
+  --delivery-blue-bold: #1d4ed8;
+  --delivery-yellow:    #ffff00;  /* legacy `yellow_bg`: CSS yellow */
+  --delivery-yellow-bold:#ca8a04;
+}
+
+/* Row backgrounds — apply to slickgrid row + cells */
+.slick-row.delivery-row-red       > .slick-cell,
+.slick-row .delivery-row-red       > .slick-cell { background-color: var(--delivery-red) !important; }
+.slick-row.delivery-row-lightblue > .slick-cell,
+.slick-row .delivery-row-lightblue > .slick-cell { background-color: var(--delivery-lightblue) !important; }
+.slick-row.delivery-row-green     > .slick-cell,
+.slick-row .delivery-row-green     > .slick-cell { background-color: var(--delivery-green) !important; }
+.slick-row.delivery-row-orange    > .slick-cell,
+.slick-row .delivery-row-orange    > .slick-cell { background-color: var(--delivery-orange) !important; }
+.slick-row.delivery-row-pink      > .slick-cell,
+.slick-row .delivery-row-pink      > .slick-cell { background-color: var(--delivery-pink) !important; }
+.slick-row.delivery-row-blue      > .slick-cell,
+.slick-row .delivery-row-blue      > .slick-cell { background-color: var(--delivery-blue) !important; }
+.slick-row.delivery-row-yellow    > .slick-cell,
+.slick-row .delivery-row-yellow    > .slick-cell { background-color: var(--delivery-yellow) !important; }
+
+/* Legend swatches — use the SAME hue as the row tint so the chip beside a
+ * label exactly matches what the user sees on the row. Previously we used
+ * the *-bold variants for readability of the 14px chip, but operators
+ * reported that "Pink" / "Submitted for review" etc. didn't visually map to
+ * the rows in the grid. Matching the row colour is the correct trade-off. */
+.delivery-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+.delivery-legend-red       { background: var(--delivery-red); }
+.delivery-legend-lightblue { background: var(--delivery-lightblue); }
+.delivery-legend-green     { background: var(--delivery-green); }
+.delivery-legend-orange    { background: var(--delivery-orange); }
+.delivery-legend-pink      { background: var(--delivery-pink); }
+.delivery-legend-blue      { background: var(--delivery-blue); }
+.delivery-legend-yellow    { background: var(--delivery-yellow); }
+
+/* Vertical column lines — drawn via the SlickGrid theme's own CSS variables
+ * AND a fallback `border-right` for cells the theme variables don't reach.
+ *
+ * Why both: the slickgrid-universal default theme sets each cell's borders
+ * via vars like `--slick-cell-border-right` and the header column's via
+ * `--slick-grid-border-color`. Overriding just `.slick-cell { border-right }`
+ * works for body cells but not for the header strip / headerrow strip, and
+ * the cell rule itself can be re-painted by other theme rules. Driving the
+ * CSS variables at the wrap level is the supported customisation path and
+ * propagates to every internal SlickGrid pane.
+ *
+ * Inset box-shadow was visually correct but forced a paint of every cell on
+ * horizontal scroll, making the pan feel sticky. Borders are
+ * compositor-accelerated, so scrolling stays smooth.
+ *
+ * Color is gray-700, 1px thick — the sweet spot operators landed on: dark
+ * enough to read clearly against tinted rows (rose / cyan / pink etc.),
+ * thin enough not to overpower a single row's content. Earlier attempts at
+ * gray-400 / gray-600 read as "no line at all"; pure black at 2px felt
+ * heavy. */
+.deliveries-grid-wrap {
+  /* Inter-column dividers: gray-500 — visible but unobtrusive. These are
+   * just visual aids between sibling columns, so they stay quiet. */
+  --slick-grid-border-color: #6b7280;
+  --slick-grid-border-style: solid;
+  --slick-cell-border-right: 1px solid #6b7280;
+  --slick-cell-border-bottom: 1px solid #6b7280;
+  --slick-cell-border-top: 0;
+  --slick-cell-border-left: 0;
+  /* Frozen-pane seam: gray-900 + 2px — this IS a structural boundary
+   * (where the frozen left pane ends and the scrollable right pane begins),
+   * so it gets emphasised relative to the inter-column lines. */
+  --slick-frozen-border-right: 2px solid #6b7280;
+
+  /* Size columns render 4-line headers (clothing / adult shoe / kids
+   * shoe A / kids shoe B — legacy parity, slickgrid_home_all_sizes.ctp
+   * uses the same stacked layout) plus an <hr> separator between each
+   * pair of lines (legacy `name: "XS<hr/>6<hr/>10K<hr/>11K"`). Default
+   * header column height is 34px; 4 × ~16px lines + 3 × ~3px hrs +
+   * vertical padding needs ~80px. */
+  --slick-header-column-height: 80px;
+  /* SlickGrid's `.slick-column-name` is `-webkit-line-clamp:
+   * var(--slick-header-row-count, 2)` by default — so anything past
+   * line 2 gets ellipsised (showing as e.g. "6..." instead of "6"
+   * on the size headers). Bump to 4 so all four stacked variants
+   * render in full. */
+  --slick-header-row-count: 4;
+
+  /* Header colour — legacy parity. The legacy SMS grid used a 2x100
+   * vertical-gradient GIF (header-columns-bg.gif): white at top, light
+   * olive-green `#e3efc5` mid, settling at `#edf4d9` for most of the
+   * visible area. We use the dominant `#edf4d9` as a flat fill since
+   * the gradient was a 2010-era jQuery-UI artefact and reads as a
+   * solid pale green at modern DPIs. Same colour is applied to the
+   * filter (headerrow) strip just below so the header and filter band
+   * read as one connected unit. SlickGrid surfaces these via
+   * `--slick-header-background-color` and
+   * `--slick-header-row-background-color`. */
+  --slick-header-background-color: #edf4d9;
+  --slick-header-row-background-color: #edf4d9;
+
+  /* Top + left border that frames the whole grid. SlickGrid's
+   * container uses `border-{top,left,right,bottom}: var(...,
+   * 0 none)` — all zero by default. We draw two sides (top and left)
+   * so the grid has a clear frame on its leading edges; the right
+   * edge sits flush with the page chrome and the bottom edge is
+   * already drawn by `--slick-container-border-bottom` (1px solid
+   * #ddd from the default theme). */
+  --slick-container-border-top: 1px solid #6b7280;
+  --slick-container-border-left: 1px solid #6b7280;
+}
+
+/* Allow stacked size headers to wrap onto multiple lines. SlickGrid's
+ * default `.slick-header-column` is `white-space: nowrap` + `overflow:
+ * hidden` which would collapse our `<div>` lines into one. Switching to
+ * `normal` lets each `<div>` in `buildSizeHeaderHtml` (DeliveriesGrid)
+ * become its own line. We scope to `.deliveries-grid-wrap` so other
+ * grids aren't affected. */
+.deliveries-grid-wrap .slick-header-column {
+  white-space: normal;
+}
+
+/* Data-cell text — slightly bolder than default so the values read clearly
+ * against the coloured row backgrounds. Headers (.slick-header-column) and
+ * filter inputs (.slick-headerrow-column) are deliberately NOT bumped — keep
+ * their existing weight so the header strip still looks lighter than the
+ * data rows. 500 is the smallest step above the default 400; anything more
+ * starts to feel heavy on long-scrolling lists. */
+.deliveries-grid-wrap .slick-cell {
+  font-weight: 450;
+}
+
+/* Visible 1px divider for all three strips (header titles, filter row, data
+ * cells). The `box-sizing: border-box` declaration is LOAD-BEARING for
+ * `.slick-headerrow-column`: the default theme leaves it at `content-box`
+ * with `padding: 4px` + `border: none`, which would make every filter cell
+ * visually 8-9px wider than the data cell directly below it, misaligning
+ * column boundaries between the filter strip and the data canvas (and the
+ * misalignment becomes most visible when the available width is tighter —
+ * i.e. with the sidebar open). Forcing `border-box` here pulls the filter
+ * cell back to `column.width` so the vertical lines line up.
+ *
+ * (.slick-header-column has `box-sizing: content-box !important` in the
+ * theme, so this rule can't change its box-sizing — that's fine; its
+ * borders still get drawn.) */
+.deliveries-grid-wrap .slick-header-column,
+.deliveries-grid-wrap .slick-headerrow-column,
+.deliveries-grid-wrap .slick-cell {
+  box-sizing: border-box;
+  border-right: 1px solid #6b7280 !important;
+}
+
+/* Container — fixed height so SlickGrid owns BOTH scrollbars internally.
+ *
+ * The grid uses SlickGrid's native `frozenColumn` feature, which splits the
+ * grid into a left (frozen) pane and a right (scrollable) pane. The right
+ * pane owns the horizontal scrollbar. The wrapper has a definite height so
+ * SlickGrid (with `enableAutoResize`) sizes its viewports to fit — and the
+ * page itself never grows a horizontal scrollbar. */
+.deliveries-grid-wrap {
+  width: 100%;
+  max-width: 100%;
+  /* The subtraction accounts for the chrome stacked above the grid:
+   * top app bar + PageHeader + (now compact) filter card + pagination
+   * row + page padding. Was 360px before the filter card was
+   * tightened, then 290px; trimmed further to 220px (≈ 2 more rows,
+   * rowHeight is 30px) since the resize handle lets users shrink it
+   * back down if the chrome overlaps on a short viewport. */
+  height: calc(100vh - 220px);
+  min-height: 400px;
+  /* `relative` anchors the absolute-positioned `.deliveries-grid-resize-handle`
+   * (below) to the wrapper's bottom-right corner. */
+  position: relative;
+  /* Clip any canvas overflow at the wrapper boundary so the page itself never
+   * grows a horizontal scrollbar. SlickGrid's right-pane viewport keeps its
+   * own scrollbar inside — that's the single horizontal scrollbar the user
+   * sees. */
+  overflow: hidden;
+}
+
+/* Bottom-right corner drag handle. Height-only resize (width is locked to the
+ * page) — cursor reflects that. Sits above SlickGrid's internal viewports so
+ * a stray click on the corner never falls through to a cell selection. */
+.deliveries-grid-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: ns-resize;
+  background:
+    linear-gradient(135deg, transparent 0 7px, #94a3b8 7px 8px, transparent 8px 11px, #94a3b8 11px 12px, transparent 12px 100%);
+  opacity: 0.7;
+  z-index: 5;
+  user-select: none;
+}
+.deliveries-grid-resize-handle:hover {
+  opacity: 1;
+}
+
+/* Right-pane width (base + complementary resize) is managed entirely in
+ * DeliveriesGrid.tsx — see the `useEffect` that observes the left pane and
+ * the sidebar's <aside> class. CSS does not own this width any more. */
+
+/* Inline cell edit feedback. Added via `grid.addCellCssStyles` for 3 seconds,
+ * then removed. The CSS transition fades the colour out smoothly so the cell
+ * doesn't pop back to its original background.
+ *   - green: server accepted the edit
+ *   - red:   server rejected the edit (mutation rejected). The toast carries
+ *           the error message; the red flash is the visual confirmation that
+ *           the cell value is NOT what the server has. */
+.deliveries-grid-wrap .slick-cell.delivery-cell-flash-green {
+  background-color: #6cdf4f !important;
+  transition: background-color 2.5s ease-out;
+}
+
+.deliveries-grid-wrap .slick-cell.delivery-cell-flash-red {
+  background-color: #f87171 !important;
+  transition: background-color 2.5s ease-out;
+}
+
+/* Header-row filter inputs (legacy headerRow). Cells get a slim light-grey
+ * background to visually separate the filter strip from the column titles.
+ *
+ * NB: we do NOT set `padding` here — the default theme already applies
+ * `padding: var(--slick-header-row-filter-padding, 4px)` and re-declaring it
+ * here as `4px 4px` is harmless on its own, but combined with a
+ * `box-sizing: border-box` override (which used to live above) it caused the
+ * filter row to drift away from the data row by 8px per cell on horizontal
+ * scroll. Leave the padding to the default theme. */
+.deliveries-grid-wrap .slick-headerrow-column {
+  /* Match the column-header strip's legacy pale-green colour so the
+   * header titles and the filter inputs read as one connected band.
+   * Was `#f9fafb` (light grey); now `#edf4d9` (same as the
+   * `--slick-header-background-color` set up top). */
+  background: #edf4d9;
+  vertical-align: middle;
+}
+
+/* Visible 2px dividers between the three grid strips — column-titles, filter
+ * row, first data row. The default theme draws only a faint 1px border that
+ * blends into the page background, so the filter row visually merges with
+ * either the title row above it or the first data row below.
+ *
+ * Drawn via `box-shadow inset` instead of `border-bottom` so the box height
+ * stays at the value SlickGrid expects (header / headerRow height options
+ * are used to position the viewport below — adding real border thickness
+ * would push the data canvas down by 1-2px and break alignment). The shadow
+ * paints inside the existing box and is invisible to layout. */
+.deliveries-grid-wrap .slick-header {
+  box-shadow: inset 0 -2px 0 #6b7280;
+}
+.deliveries-grid-wrap .slick-headerrow {
+  box-shadow: inset 0 -2px 0 #6b7280;
+}
+
+/* Editable-cell chrome — strip the default theme's chunky borders so the
+ * input looks like a clean inline field, not a framed sub-widget.
+ *
+ * The default theme stacks three layers of border on a cell in edit mode:
+ *   1. `.slick-cell.editable` → `border-color: black; border-style: solid`
+ *      (slick-grid.scss:442-448)
+ *   2. our own `.slick-cell { border-right: 1px solid #6b7280 !important }`
+ *      column divider (above)
+ *   3. `input.editor-text` → `border: 1px solid #e2e2e2`
+ *      (slick-editors.scss:8)
+ * Stacked together they read as a thick double-framed box. We zero all three
+ * on the editing cell, then re-add a subtle 1px focus ring on the input so
+ * the user still sees which cell is being edited. */
+.deliveries-grid-wrap .slick-cell.editable {
+  border-color: transparent !important;
+  /* Keep the column divider on the right edge — without it the editing
+   * cell visually "merges" into its right neighbour during edit. */
+  border-right: 1px solid #6b7280 !important;
+  padding: 0 !important;
+}
+.deliveries-grid-wrap .slick-cell.editable input.editor-text {
+  border: 0 !important;
+  /* Theme default is `--slick-text-editor-border-radius: 3px` (see
+   * slick-editors.scss:9 + _variables.scss:488). Override to 0 so the
+   * editing input has square corners matching the rest of the grid. */
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 4px;
+  height: 100%;
+}
+.deliveries-grid-wrap .slick-cell.editable input.editor-text:focus {
+  border: 0 !important;
+  box-shadow: inset 0 0 0 1px #2563eb !important;
+  outline: 0 !important;
+}
+
+/* Season cell uses `Editors.singleSelect`, which renders a `button.ms-choice`
+ * from multiple-select-vanilla. That widget brings its own
+ * `1px solid #d0d0d0` rounded border + focus glow (multiple-select.css). We
+ * mirror the text-input cleanup above so the season dropdown looks
+ * consistent with the other editable cells — borderless body, thin 1px blue
+ * inset focus ring. */
+.deliveries-grid-wrap .slick-cell.editable .ms-choice {
+  border: 0 !important;
+  border-radius: 0 !important;
+  height: 100% !important;
+  line-height: normal !important;
+  padding: 0 6px !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.deliveries-grid-wrap .slick-cell.editable .ms-choice:focus {
+  border: 0 !important;
+  box-shadow: inset 0 0 0 1px #2563eb !important;
+  outline: 0 !important;
+}
+
+/* Per-cell hover popup showing the size name (e.g. "Small 36-38\" Chest").
+ *
+ * Legacy parity: in slickgrid_home_all_sizes.ctp the size cells output
+ * `<div class="commentImage">QTY<div id="commentBox" style="display:none">
+ * SIZE_NAME</div></div>`, and jQuery toggles the inner box on mouseenter /
+ * mouseleave. We render the same nested DOM in `sizeQuantityFormatter`
+ * (DeliveriesGrid.tsx) but skip the jQuery wiring — CSS `:hover` is enough.
+ *
+ * Why `position: fixed`: SlickGrid cells have `overflow: hidden` so an
+ * absolutely-positioned child gets clipped at the cell's 40px-wide bounding
+ * box. The legacy fix was a `.cell-no-overflow { overflow: visible }` class
+ * on the column, but flipping a slick-cell to `overflow: visible` breaks
+ * the canvas (cell text bleeds into neighbours). `position: fixed` escapes
+ * the cell's containing block entirely; JS adds `top` / `left` at hover time
+ * from the cell's bounding rect via `pointer-events: none` so the popup
+ * never steals the cursor. We position the popup with CSS-only using the
+ * cell's flow position — pure-CSS works because we promote the cell on hover
+ * (`z-index: 100`) and let the popup overflow visually via transform. */
+.deliveries-grid-wrap .commentImage {
+  position: relative;
+  display: inline-block;
+  cursor: default;
+}
+.deliveries-grid-wrap .commentImage > .commentBox {
+  display: none;
+  position: absolute;
+  z-index: 100;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: #E4EFC9;
+  color: #111;
+  border: 1px solid #6b7280;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+/* On cell hover, lift the cell above its neighbours and unclip it so the
+ * tooltip can render outside the 40px cell box. */
+.deliveries-grid-wrap .slick-cell:hover {
+  overflow: visible;
+  z-index: 50;
+}
+.deliveries-grid-wrap .slick-cell:hover .commentImage > .commentBox {
+  display: block;
+}

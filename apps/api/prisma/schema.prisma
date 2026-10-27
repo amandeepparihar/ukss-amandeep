@@ -1,0 +1,1002 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication Models
+// ============================================
+
+model User {
+  id                   String  @id @default(cuid())
+  email                String  @unique
+  password             String
+  firstName            String
+  lastName             String
+  avatar               String?
+  isActive             Boolean @default(true)
+  emailVerified        Boolean @default(false)
+  twoFactorEnabled     Boolean @default(false)
+  twoFactorSecret      String?
+  twoFactorBackupCodes String? // JSON array of hashed backup codes
+
+  // Failed login tracking
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // Role relation
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  // Relations
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  uploadedFiles           File[]
+  notifications           Notification[]
+  notificationPreferences UserNotificationPreference[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  @@index([email])
+  @@index([roleId])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  isSystem    Boolean @default(false) // Can't delete system roles
+
+  permissions Permission[]
+  users       User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([isSystem])
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  resource String // e.g., "users", "orders", "reports"
+  action   String // e.g., "view", "create", "edit", "delete"
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([resource])
+  @@index([action])
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshToken String  @unique
+  userAgent    String?
+  ipAddress    String?
+  deviceInfo   Json?
+
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+}
+
+model TrustedDevice {
+  id          String  @id @default(cuid())
+  userId      String
+  fingerprint String
+  name        String?
+  browser     String?
+  os          String?
+  deviceType  String?
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+}
+
+model LoginHistory {
+  id            String  @id @default(cuid())
+  userId        String
+  ipAddress     String
+  userAgent     String?
+  fingerprint   String?
+  location      String?
+  browser       String?
+  os            String?
+  deviceType    String?
+  isTrusted     Boolean @default(false)
+  success       Boolean @default(true)
+  failureReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([success])
+  @@index([createdAt])
+}
+
+model EmailVerification {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+}
+
+// ============================================
+// Audit & Logging Models
+// ============================================
+
+model AuditLog {
+  id     String  @id @default(cuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action     String // e.g., "login", "logout", "create", "update", "delete"
+  resource   String // e.g., "user", "order"
+  resourceId String?
+
+  oldValues Json?
+  newValues Json?
+  metadata  Json? // IP, user agent, etc.
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([resourceId])
+  @@index([createdAt])
+}
+
+model SystemLog {
+  id String @id @default(cuid())
+
+  level   String // info, warn, error, etc.
+  module  String // Module name
+  message String
+
+  // Context
+  requestId String?
+  userId    String?
+  sessionId String?
+
+  // Data
+  data  Json?
+  error Json? // Stack trace, error details
+
+  // Request context
+  method     String?
+  path       String?
+  statusCode Int?
+  duration   Int? // ms
+  ip         String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([module])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================
+// Menu System Models
+// ============================================
+
+model MenuItem {
+  id         String  @id @default(cuid())
+  label      String
+  icon       String? // Lucide icon name
+  path       String? // Route path or external URL
+  isExternal Boolean @default(false)
+
+  parentId String?
+  parent   MenuItem?  @relation("MenuHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children MenuItem[] @relation("MenuHierarchy")
+
+  permission String? // Required permission to see this item
+  badgeKey   String? // Key to fetch badge count from API
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([sortOrder])
+  @@index([isActive])
+}
+
+// ============================================
+// File & Media Models
+// ============================================
+
+model File {
+  id String @id @default(cuid())
+
+  filename String // Original filename
+  mimeType String
+  size     Int // Size in bytes
+  checksum String? // MD5/SHA hash for deduplication
+
+  storageKey String // S3 key
+  storageUrl String // Full URL
+
+  // For images
+  width      Int?
+  height     Int?
+  thumbnails Json? // { small: url, medium: url, large: url }
+
+  // Processing status
+  status      FileStatus @default(PENDING)
+  processedAt DateTime?
+
+  // Relations
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadedById])
+  @@index([status])
+  @@index([mimeType])
+  @@index([createdAt])
+  @@index([checksum])
+}
+
+enum FileStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DELETED
+}
+
+// Batch Upload for resumable multi-file uploads
+model BatchUpload {
+  id     String @id @default(cuid())
+  userId String
+
+  // Batch metadata
+  totalFiles Int // Expected total number of files
+  folder     String @default("uploads")
+
+  // Status tracking
+  status      BatchUploadStatus @default(IN_PROGRESS)
+  completedAt DateTime?
+
+  // Files in this batch
+  items BatchUploadItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime // Auto-cleanup after expiry
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model BatchUploadItem {
+  id      String      @id @default(cuid())
+  batchId String
+  batch   BatchUpload @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // File identification (for deduplication)
+  clientId String // Client-provided ID for tracking
+  checksum String // MD5/SHA hash for deduplication
+  filename String // Original filename
+  mimetype String
+  size     Int
+
+  // Upload status
+  status BatchUploadItemStatus @default(PENDING)
+
+  // S3 info (populated after upload)
+  storageKey String?
+  storageUrl String?
+  fileId     String? // Reference to File record once complete
+
+  // Error tracking
+  error      String?
+  retryCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, checksum]) // Prevent duplicate files in same batch
+  @@unique([batchId, clientId]) // Prevent duplicate client IDs
+  @@index([batchId])
+  @@index([status])
+  @@index([checksum])
+}
+
+enum BatchUploadStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum BatchUploadItemStatus {
+  PENDING // Registered but not uploaded
+  UPLOADING // Upload in progress
+  UPLOADED // Successfully uploaded
+  FAILED // Upload failed
+  SKIPPED // Skipped (duplicate detected)
+}
+
+// ============================================
+// Notification Models
+// ============================================
+
+model NotificationTemplate {
+  id String @id @default(cuid())
+
+  code        String  @unique // e.g., "welcome_email", "order_shipped"
+  name        String
+  description String?
+
+  // Channel-specific content
+  channels NotificationTemplateChannel[]
+
+  // Variables this template uses
+  variables String[] // e.g., ["userName", "orderNumber"]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model NotificationTemplateChannel {
+  id String @id @default(cuid())
+
+  templateId String
+  template   NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  channel NotificationChannel
+  subject String? // For email
+  content String // Template content with {{variables}}
+
+  @@unique([templateId, channel])
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  // Recipient
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Or direct contact (for non-users)
+  email       String?
+  phone       String?
+  deviceToken String?
+
+  // Content
+  templateId String?
+  template   NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  channel NotificationChannel
+  subject String?
+  content String
+
+  // Status
+  status      NotificationStatus @default(PENDING)
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  error       String?
+
+  // Retry
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  nextRetryAt DateTime?
+
+  // Scheduling
+  scheduledFor DateTime?
+
+  // Priority
+  priority Int @default(5) // 1 = highest
+
+  // Metadata
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([channel])
+  @@index([status])
+  @@index([priority])
+  @@index([scheduledFor])
+  @@index([createdAt])
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+model UserNotificationPreference {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  // Quiet hours
+  quietHoursStart String? // "22:00"
+  quietHoursEnd   String? // "08:00"
+  timezone        String?
+
+  @@unique([userId, channel])
+}
+
+// ============================================
+// Settings & Configuration Models
+// ============================================
+
+model SystemSetting {
+  id String @id @default(cuid())
+
+  key   String      @unique
+  value Json
+  type  SettingType
+
+  category    String // e.g., 'general', 'email', 'security'
+  label       String
+  description String?
+
+  isPublic Boolean @default(false) // Can be fetched without auth
+
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([isPublic])
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+  SECRET
+}
+
+model FeatureFlag {
+  id String @id @default(cuid())
+
+  key         String  @unique
+  name        String
+  description String?
+
+  enabled Boolean @default(false)
+
+  // Optional: enable for specific users/roles
+  rules Json? // { users: [], roles: [], percentage: 10 }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@index([enabled])
+}
+
+// Translation overrides (database-stored translations)
+model Translation {
+  id String @id @default(cuid())
+
+  locale String // e.g., 'en', 'es', 'fr'
+  key    String // e.g., 'auth.login.success'
+  value  String // The translated text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locale, key])
+  @@index([locale])
+}
+
+// ============================================
+// Export Models
+// ============================================
+
+model Export {
+  id String @id @default(cuid())
+
+  resource String
+  format   ExportFormat
+  filters  Json?
+  columns  String[]
+  template String? // For PDF
+
+  // Status
+  status ExportStatus @default(PENDING)
+
+  // Result
+  fileUrl  String?
+  fileSize Int?
+  rowCount Int?
+
+  error String?
+
+  // User who requested
+  userId String
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ExportFormat {
+  CSV
+  EXCEL
+  PDF
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// Announcement Models
+// ============================================
+
+model Announcement {
+  id String @id @default(cuid())
+
+  title   String
+  content String // Markdown content
+  type    AnnouncementType @default(INFO)
+
+  // Visibility
+  isActive Boolean   @default(true)
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  // Targeting
+  targetRoles String[] // Empty = all users
+  dismissable Boolean  @default(true)
+
+  // Display options
+  showOnPages String[] // Empty = all pages
+  priority    Int      @default(5) // 1 = highest
+
+  // Tracking
+  createdById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([priority])
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+}
+
+model AnnouncementDismissal {
+  id             String @id @default(cuid())
+  userId         String
+  announcementId String
+
+  dismissedAt DateTime @default(now())
+
+  @@unique([userId, announcementId])
+  @@index([userId])
+  @@index([announcementId])
+}
+
+// ============================================
+// Scheduled Jobs Models
+// ============================================
+
+model ScheduledJob {
+  id String @id @default(cuid())
+
+  name        String  @unique
+  description String?
+
+  // Scheduling
+  cron     String // Cron expression
+  timezone String @default("UTC")
+
+  // Handler
+  handler String // Handler function name
+  payload Json? // Default payload for the job
+
+  // Status
+  isEnabled Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  // Execution tracking
+  runs ScheduledJobRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isEnabled])
+  @@index([nextRunAt])
+}
+
+model ScheduledJobRun {
+  id String @id @default(cuid())
+
+  jobId String
+  job   ScheduledJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Execution details
+  status      ScheduledJobStatus @default(RUNNING)
+  startedAt   DateTime           @default(now())
+  completedAt DateTime?
+  duration    Int? // Duration in milliseconds
+
+  // Results
+  result Json?
+  error  String?
+  logs   String? // Execution logs
+
+  // Trigger info
+  triggeredBy String? // 'cron' | 'manual' | userId
+
+  @@index([jobId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+enum ScheduledJobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ============================================
+// Marketplace Integration Models
+// ============================================
+
+// Tracks individual product listings per marketplace
+// One record per UKSS SKU per marketplace (store)
+model MarketplaceListing {
+  id String @id @default(cuid())
+
+  // Marketplace identification
+  storeId         Int // Marketplace store ID (e.g., Fruugo=95, OnBuy=125)
+  marketplaceName String // Human-readable name for logging
+
+  // UKSS product data (source of truth)
+  ukssSku       String // UKSS SKU (e.g., "ABC123-M")
+  ukssProductId Int? // Reference to new_products_variations.npv_products_id
+  ukssQuantity  Int     @default(0) // Current stock quantity in UKSS
+  ukssPrice     Decimal @default(0) @db.Decimal(10, 2) // Current price in UKSS
+
+  // External marketplace IDs (populated after first sync)
+  externalSkuId     String? // Marketplace's SKU ID (e.g., fruugo_sku_id)
+  externalProductId String? // Marketplace's product ID
+
+  // Listing status
+  isActive    Boolean   @default(true) // Whether to sync this listing
+  listedAt    DateTime? // First time successfully sent to marketplace (for delta listing)
+  delistedAt  DateTime? // When delisted (set inactive)
+  syncAllowed Boolean   @default(true) // Whether price/inventory sync is allowed (false for marketplaces requiring offer creation first, e.g. Debenhams)
+
+  // Sync status tracking
+  lastSyncStatus MarketplaceSyncStatus?
+  lastSyncedAt   DateTime? // Last sync attempt timestamp
+  retryCount     Int                    @default(0)
+  lastSyncError  String? // Error message (truncated)
+
+  // Last synced values (for change detection)
+  lastSyncedQuantity Int?
+  lastSyncedPrice    Decimal? @db.Decimal(10, 2)
+
+  // Priority and metadata
+  priority Int   @default(0) // Higher = sync first (bestsellers)
+  metadata Json? // Additional marketplace-specific data
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Unique constraint: one listing per SKU per store
+  @@unique([storeId, ukssSku])
+  // Performance indexes for common queries
+  @@index([storeId, isActive]) // Active listings per store
+  @@index([storeId, listedAt]) // Delta listing: new items (listedAt IS NULL)
+  @@index([storeId, lastSyncStatus, retryCount]) // Items needing retry
+  @@index([storeId, lastSyncedAt]) // Oldest synced first
+  @@index([storeId, priority]) // Priority ordering
+  @@index([storeId, ukssQuantity, lastSyncedQuantity]) // Inventory change detection
+  @@index([externalSkuId]) // Lookup by external ID
+  @@index([storeId, syncAllowed]) // Sync-allowed filter
+}
+
+enum MarketplaceSyncStatus {
+  PENDING // Needs to be synced
+  SYNCING // Currently being synced
+  SYNCED // Successfully synced
+  FAILED // Sync failed (check retryCount)
+}
+
+// Tracks sync job execution history
+model MarketplaceSyncHistory {
+  id String @id @default(cuid())
+
+  // Job identification
+  storeId         Int // Marketplace store ID
+  marketplaceName String // Human-readable name
+  operation       String // e.g., "inventory_sync", "product_feed", "sku_mapping"
+  correlationId   String? // For log correlation
+
+  // Execution timing
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int? // Execution duration in milliseconds
+
+  // Results
+  status MarketplaceSyncJobStatus @default(RUNNING)
+
+  // Counts
+  totalItems     Int @default(0) // Total items attempted
+  newItemsListed Int @default(0) // New items added to marketplace (delta listing)
+  itemsUpdated   Int @default(0) // Existing items updated
+  itemsFailed    Int @default(0) // Items that failed
+
+  // Error details
+  errorSummary String? // Brief error summary
+  errorDetails Json? // Detailed error info (first N errors)
+
+  // Trigger info
+  triggeredBy String? // 'cron' | 'manual' | userId
+
+  // Additional context
+  metadata Json? // Job-specific metadata
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId, operation])
+  @@index([storeId, startedAt])
+  @@index([status])
+  @@index([correlationId])
+}
+
+enum MarketplaceSyncJobStatus {
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+// ============================================
+// Demo Models - Reusable DataTable Pattern
+// ============================================
+
+// Master table for product categories
+model DemoCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  products DemoProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+// Master table for product statuses
+model DemoStatus {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  label     String // Display label
+  color     String? // For UI badge color
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  products DemoProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+// Main data table - can have millions of rows
+model DemoProduct {
+  id          String  @id @default(cuid())
+  sku         String  @unique
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+  stock       Int     @default(0)
+
+  // Foreign keys to master tables
+  categoryId String
+  category   DemoCategory @relation(fields: [categoryId], references: [id])
+
+  statusId String
+  status   DemoStatus @relation(fields: [statusId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes for fast queries on large datasets
+  @@index([categoryId])
+  @@index([statusId])
+  @@index([name])
+  @@index([sku])
+  @@index([price])
+  @@index([stock])
+  @@index([createdAt])
+}
+
+// ============================================
+// Cross-Application Shared Admin Session
+// Ticket ID: 164781 - mirrors schema.mysql.prisma (required by auth plugin)
+// ============================================
+
+model SharedAdminSession {
+  id           String   @id @default(cuid())
+  token        String   @unique @db.VarChar(128)
+  userEmail    String   @db.VarChar(255)
+  nodeUserId   String?
+  phpUserId    Int?
+  ipAddress    String?
+  userAgent    String?  @db.Text
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userEmail])
+  @@index([nodeUserId])
+  @@index([phpUserId])
+  @@index([expiresAt])
+  @@map("jsa_shared_admin_sessions")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  isPublic  Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// ****************LMS*************************
+// ============================================
+
+model Book {
+  id        String   @id @default(cuid())
+  bookCover String?
+  bookName  String
+  authorName    String
+  isbn      String   @unique
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  issues    Issue[]
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  name      String
+  rollNo    String   @unique
+  phoneNo   String
+  photoFile String?
+  country   String
+  state     String
+  city      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  issues    Issue[]
+}
+
+enum IssueStatus {
+  ISSUED
+  RETURNED
+}
+
+model Issue {
+  id         String      @id @default(cuid())
+  bookId     String
+  studentId  String
+  issueDate  DateTime
+  returnDate DateTime?
+  status     IssueStatus @default(ISSUED)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  book    Book    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+  @@index([studentId])
+  @@index([status])
+}

@@ -1,0 +1,2322 @@
+// MySQL/MariaDB Prisma schema
+// Compatible with MySQL 8.0+ and MariaDB 10.3+
+// Usage: prisma generate --schema=./prisma/schema.mysql.prisma
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/client-mysql"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("MYSQL_DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication Models
+// ============================================
+
+model User {
+  id                   String  @id @default(cuid())
+  email                String  @unique
+  password             String
+  firstName            String
+  lastName             String
+  avatar               String?
+  isActive             Boolean @default(true)
+  emailVerified        Boolean @default(false)
+  twoFactorEnabled     Boolean @default(false)
+  twoFactorSecret      String?
+  twoFactorBackupCodes String? @db.Text // JSON array of hashed backup codes
+
+  // Failed login tracking
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // Role relation
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  // Relations
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  uploadedFiles           File[]
+  notifications           Notification[]
+  notificationPreferences UserNotificationPreference[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  @@index([email])
+  @@index([roleId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("jsa_users")
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String? @db.Text
+  isSystem    Boolean @default(false) // Can't delete system roles
+
+  permissions Permission[]
+  users       User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([isSystem])
+  @@map("jsa_roles")
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  resource String // e.g., "users", "orders", "reports"
+  action   String // e.g., "view", "create", "edit", "delete"
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([resource])
+  @@index([action])
+  @@map("jsa_permissions")
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshToken String  @unique @db.VarChar(500)
+  userAgent    String? @db.Text
+  ipAddress    String?
+  deviceInfo   Json?
+
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+  @@map("jsa_sessions")
+}
+
+// ============================================
+// Cross-Application Shared Admin Session
+// Ticket ID: 164781 - Single Sign-On between Node.js and PHP applications
+// ============================================
+
+model SharedAdminSession {
+  id           String   @id @default(cuid())
+  token        String   @unique @db.VarChar(128)
+
+  // User identification (email is common between both apps)
+  userEmail    String   @db.VarChar(255)
+
+  // Node.js user reference (optional - may not exist if login from PHP)
+  nodeUserId   String?
+
+  // PHP user reference (sms_users_id from PHP application)
+  phpUserId    Int?
+
+  // Session metadata (reusing pattern from Session model)
+  ipAddress    String?
+  userAgent    String?  @db.Text
+
+  // Timestamps (following existing patterns)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userEmail])
+  @@index([nodeUserId])
+  @@index([phpUserId])
+  @@index([expiresAt])
+  @@map("jsa_shared_admin_sessions")
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique @db.VarChar(500)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@map("jsa_password_resets")
+}
+
+model TrustedDevice {
+  id          String  @id @default(cuid())
+  userId      String
+  fingerprint String
+  name        String?
+  browser     String?
+  os          String?
+  deviceType  String?
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("jsa_trusted_devices")
+}
+
+model LoginHistory {
+  id            String  @id @default(cuid())
+  userId        String
+  ipAddress     String
+  userAgent     String? @db.Text
+  fingerprint   String?
+  location      String?
+  browser       String?
+  os            String?
+  deviceType    String?
+  isTrusted     Boolean @default(false)
+  success       Boolean @default(true)
+  failureReason String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([success])
+  @@index([createdAt])
+  @@map("jsa_login_histories")
+}
+
+model EmailVerification {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique @db.VarChar(500)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@map("jsa_email_verifications")
+}
+
+// ============================================
+// Audit & Logging Models
+// ============================================
+
+model AuditLog {
+  id     String  @id @default(cuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action     String // e.g., "login", "logout", "create", "update", "delete"
+  resource   String // e.g., "user", "order"
+  resourceId String?
+
+  oldValues Json?
+  newValues Json?
+  metadata  Json? // IP, user agent, etc.
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([resourceId])
+  @@index([createdAt])
+  @@map("jsa_audit_logs")
+}
+
+model SystemLog {
+  id String @id @default(cuid())
+
+  level   String // info, warn, error, etc.
+  module  String // Module name
+  message String @db.Text
+
+  // Context
+  requestId String?
+  userId    String?
+  sessionId String?
+
+  // Data
+  data  Json?
+  error Json? // Stack trace, error details
+
+  // Request context
+  method     String?
+  path       String?
+  statusCode Int?
+  duration   Int? // ms
+  ip         String?
+  userAgent  String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([module])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("jsa_system_logs")
+}
+
+// ============================================
+// Menu System Models
+// ============================================
+
+model MenuItem {
+  id         String  @id @default(cuid())
+  label      String
+  icon       String? // Lucide icon name
+  path       String? // Route path or external URL
+  isExternal Boolean @default(false)
+
+  parentId String?
+  parent   MenuItem?  @relation("MenuHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children MenuItem[] @relation("MenuHierarchy")
+
+  permission String? // Required permission to see this item
+  badgeKey   String? // Key to fetch badge count from API
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@map("jsa_menu_items")
+}
+
+// ============================================
+// File & Media Models
+// ============================================
+
+model File {
+  id String @id @default(cuid())
+
+  filename String // Original filename
+  mimeType String
+  size     Int // Size in bytes
+  checksum String? // MD5/SHA hash for deduplication
+
+  storageKey String // S3 key
+  storageUrl String @db.Text // Full URL
+
+  // For images
+  width      Int?
+  height     Int?
+  thumbnails Json? // { small: url, medium: url, large: url }
+
+  // Processing status
+  status      FileStatus @default(PENDING)
+  processedAt DateTime?
+
+  // Relations
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([uploadedById])
+  @@index([status])
+  @@index([mimeType])
+  @@index([createdAt])
+  @@index([checksum])
+  @@map("jsa_files")
+}
+
+enum FileStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DELETED
+}
+
+// Batch Upload for resumable multi-file uploads
+model BatchUpload {
+  id     String @id @default(cuid())
+  userId String
+
+  // Batch metadata
+  totalFiles Int // Expected total number of files
+  folder     String @default("uploads")
+
+  // Status tracking
+  status      BatchUploadStatus @default(IN_PROGRESS)
+  completedAt DateTime?
+
+  // Files in this batch
+  items BatchUploadItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime // Auto-cleanup after expiry
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("jsa_batch_uploads")
+}
+
+model BatchUploadItem {
+  id      String      @id @default(cuid())
+  batchId String
+  batch   BatchUpload @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // File identification (for deduplication)
+  clientId String // Client-provided ID for tracking
+  checksum String // MD5/SHA hash for deduplication
+  filename String // Original filename
+  mimetype String
+  size     Int
+
+  // Upload status
+  status BatchUploadItemStatus @default(PENDING)
+
+  // S3 info (populated after upload)
+  storageKey String?
+  storageUrl String? @db.Text
+  fileId     String? // Reference to File record once complete
+
+  // Error tracking
+  error      String? @db.Text
+  retryCount Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, checksum]) // Prevent duplicate files in same batch
+  @@unique([batchId, clientId]) // Prevent duplicate client IDs
+  @@index([batchId])
+  @@index([status])
+  @@index([checksum])
+  @@map("jsa_batch_upload_items")
+}
+
+enum BatchUploadStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum BatchUploadItemStatus {
+  PENDING // Registered but not uploaded
+  UPLOADING // Upload in progress
+  UPLOADED // Successfully uploaded
+  FAILED // Upload failed
+  SKIPPED // Skipped (duplicate detected)
+}
+
+// ============================================
+// Notification Models
+// ============================================
+
+model NotificationTemplate {
+  id String @id @default(cuid())
+
+  code        String  @unique // e.g., "welcome_email", "order_shipped"
+  name        String
+  description String? @db.Text
+
+  // Channel-specific content
+  channels NotificationTemplateChannel[]
+
+  // Variables this template uses - stored as JSON array for MySQL/MariaDB
+  variables Json? // e.g., ["userName", "orderNumber"]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("jsa_notification_templates")
+}
+
+model NotificationTemplateChannel {
+  id String @id @default(cuid())
+
+  templateId String
+  template   NotificationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  channel NotificationChannel
+  subject String? // For email
+  content String              @db.Text // Template content with {{variables}}
+
+  @@unique([templateId, channel])
+  @@map("jsa_notification_template_channels")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  // Recipient
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Or direct contact (for non-users)
+  email       String?
+  phone       String?
+  deviceToken String?
+
+  // Content
+  templateId String?
+  template   NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  channel NotificationChannel
+  subject String?
+  content String              @db.Text
+
+  // Status
+  status      NotificationStatus @default(PENDING)
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  error       String?            @db.Text
+
+  // Retry
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  nextRetryAt DateTime?
+
+  // Scheduling
+  scheduledFor DateTime?
+
+  // Priority
+  priority Int @default(5) // 1 = highest
+
+  // Metadata
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([channel])
+  @@index([status])
+  @@index([priority])
+  @@index([scheduledFor])
+  @@index([createdAt])
+  @@map("jsa_notifications")
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+model UserNotificationPreference {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  // Quiet hours
+  quietHoursStart String? // "22:00"
+  quietHoursEnd   String? // "08:00"
+  timezone        String?
+
+  @@unique([userId, channel])
+  @@map("jsa_user_notification_preferences")
+}
+
+// ============================================
+// Settings & Configuration Models
+// ============================================
+
+model SystemSetting {
+  id String @id @default(cuid())
+
+  key   String      @unique
+  value Json
+  type  SettingType
+
+  category    String // e.g., 'general', 'email', 'security'
+  label       String
+  description String? @db.Text
+
+  isPublic Boolean @default(false) // Can be fetched without auth
+
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([isPublic])
+  @@map("jsa_system_settings")
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+  SECRET
+}
+
+model FeatureFlag {
+  id String @id @default(cuid())
+
+  key         String  @unique
+  name        String
+  description String? @db.Text
+
+  enabled Boolean @default(false)
+
+  // Optional: enable for specific users/roles
+  rules Json? // { users: [], roles: [], percentage: 10 }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@index([enabled])
+  @@map("jsa_feature_flags")
+}
+
+// Translation overrides (database-stored translations)
+model Translation {
+  id String @id @default(cuid())
+
+  locale String // e.g., 'en', 'es', 'fr'
+  key    String // e.g., 'auth.login.success'
+  value  String @db.Text // The translated text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locale, key])
+  @@index([locale])
+  @@map("jsa_translations")
+}
+
+// ============================================
+// Export Models
+// ============================================
+
+model Export {
+  id String @id @default(cuid())
+
+  resource String
+  format   ExportFormat
+  filters  Json?
+  columns  Json? // Stored as JSON array for MySQL/MariaDB
+
+  template String? // For PDF
+
+  // Status
+  status ExportStatus @default(PENDING)
+
+  // Result
+  fileUrl  String? @db.Text
+  fileSize Int?
+  rowCount Int?
+
+  error String? @db.Text
+
+  // User who requested
+  userId String
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("jsa_exports")
+}
+
+enum ExportFormat {
+  CSV
+  EXCEL
+  PDF
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// Announcement Models
+// ============================================
+
+model Announcement {
+  id String @id @default(cuid())
+
+  title   String
+  content String           @db.Text // Markdown content
+  type    AnnouncementType @default(INFO)
+
+  // Visibility
+  isActive Boolean   @default(true)
+  startsAt DateTime?
+  endsAt   DateTime?
+
+  // Targeting - stored as JSON array for MySQL/MariaDB
+  targetRoles Json? // Empty = all users
+  dismissable Boolean @default(true)
+
+  // Display options - stored as JSON array for MySQL/MariaDB
+  showOnPages Json? // Empty = all pages
+  priority    Int   @default(5) // 1 = highest
+
+  // Tracking
+  createdById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([priority])
+  @@map("jsa_announcements")
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+}
+
+model AnnouncementDismissal {
+  id             String @id @default(cuid())
+  userId         String
+  announcementId String
+
+  dismissedAt DateTime @default(now())
+
+  @@unique([userId, announcementId])
+  @@index([userId])
+  @@index([announcementId])
+  @@map("jsa_announcement_dismissals")
+}
+
+// ============================================
+// Scheduled Jobs Models
+// ============================================
+
+model ScheduledJob {
+  id String @id @default(cuid())
+
+  name        String  @unique
+  description String? @db.Text
+
+  // Scheduling
+  cron     String // Cron expression
+  timezone String @default("UTC")
+
+  // Handler
+  handler String // Handler function name
+  payload Json? // Default payload for the job
+
+  // Status
+  isEnabled Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
+  // Execution tracking
+  runs ScheduledJobRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isEnabled])
+  @@index([nextRunAt])
+  @@map("jsa_scheduled_jobs")
+}
+
+model ScheduledJobRun {
+  id String @id @default(cuid())
+
+  jobId String
+  job   ScheduledJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Execution details
+  status      ScheduledJobStatus @default(RUNNING)
+  startedAt   DateTime           @default(now())
+  completedAt DateTime?
+  duration    Int? // Duration in milliseconds
+
+  // Results
+  result Json?
+  error  String? @db.Text
+  logs   String? @db.LongText // Execution logs
+
+  // Trigger info
+  triggeredBy String? // 'cron' | 'manual' | userId
+
+  @@index([jobId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("jsa_scheduled_job_runs")
+}
+
+enum ScheduledJobStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Tracks sync job execution history
+model MarketplaceSyncHistory {
+  id String @id @default(cuid())
+
+  // Job identification
+  storeId         Int // Marketplace store ID
+  marketplaceName String // Human-readable name
+  operation       String // e.g., "inventory_sync", "product_feed", "sku_mapping"
+  correlationId   String? // For log correlation
+
+  // Execution timing
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int? // Execution duration in milliseconds
+
+  // Results
+  status MarketplaceSyncJobStatus @default(RUNNING)
+
+  // Counts
+  totalItems     Int @default(0) // Total items attempted
+  newItemsListed Int @default(0) // New items added to marketplace (delta listing)
+  itemsUpdated   Int @default(0) // Existing items updated
+  itemsFailed    Int @default(0) // Items that failed
+
+  // Error details
+  errorSummary String? @db.VarChar(500) // Brief error summary
+  errorDetails Json? // Detailed error info (first N errors)
+
+  // Trigger info
+  triggeredBy String? // 'cron' | 'manual' | userId
+
+  // Additional context
+  metadata Json? // Job-specific metadata
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId, operation])
+  @@index([storeId, startedAt])
+  @@index([status])
+  @@index([correlationId])
+  @@map("jsa_MarketplaceSyncHistory")
+}
+
+enum MarketplaceSyncJobStatus {
+  RUNNING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+// ============================================
+// Demo Models - Reusable DataTable Pattern
+// ============================================
+
+// Master table for product categories
+model DemoCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String? @db.Text
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  products DemoProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("jsa_demo_categories")
+}
+
+// Master table for product statuses
+model DemoStatus {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  label     String // Display label
+  color     String? // For UI badge color
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  products DemoProduct[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("jsa_demo_statuses")
+}
+
+// Main data table - can have millions of rows
+model DemoProduct {
+  id             String   @id @default(cuid())
+  sku            String   @unique
+  name           String
+  description    String?  @db.Text
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  stock          Int      @default(0)
+  isDeleted      Boolean  @default(false) // Soft delete for Shopify unpublish
+
+  // Foreign keys to master tables
+  categoryId String
+  category   DemoCategory @relation(fields: [categoryId], references: [id])
+
+  statusId String
+  status   DemoStatus @relation(fields: [statusId], references: [id])
+
+  // Relations for Shopify sync
+  variants   ProductVariant[]
+  syncStatus ProductSyncStatus[]
+  syncItems  ShopifySyncItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes for fast queries on large datasets
+  @@index([categoryId])
+  @@index([statusId])
+  @@index([name])
+  @@index([sku])
+  @@index([price])
+  @@index([stock])
+  @@index([createdAt])
+  @@index([isDeleted])
+  @@index([updatedAt])
+  @@map("jsa_demo_products")
+}
+
+// Product variants (sizes, colors, etc.)
+model ProductVariant {
+  id        String      @id @default(cuid())
+  productId String
+  product   DemoProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku            String   @unique
+  title          String // e.g., "Small / Red"
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  stock          Int      @default(0)
+
+  option1 String? // Size
+  option2 String? // Color
+  option3 String? // Material
+
+  shopifyVariantId String? // Shopify variant GID
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@index([updatedAt])
+  @@map("jsa_product_variants")
+}
+
+// ============================================
+// Shopify Sync Module
+// ============================================
+
+// Shopify store credentials
+model ShopifyStore {
+  id           String    @id @default(cuid())
+  name         String // Display name (e.g., "US Store")
+  shopDomain   String    @unique // mystore.myshopify.com
+  accessToken  String    @db.Text // Encrypted OAuth token
+  apiVersion   String    @default("2024-01") // Shopify API version
+  isActive     Boolean   @default(true)
+  syncInterval Int       @default(60) // Minutes between syncs
+  lastSyncAt   DateTime?
+
+  syncs         ShopifySync[]
+  productStatus ProductSyncStatus[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("jsa_shopify_stores")
+}
+
+// Sync job history (retained 30 days)
+model ShopifySync {
+  id      String       @id @default(cuid())
+  storeId String
+  store   ShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  status      SyncStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  totalProducts Int @default(0)
+  processed     Int @default(0)
+  created       Int @default(0)
+  updated       Int @default(0)
+  failed        Int @default(0)
+
+  checkpoint   String? @db.Text // JSON: { lastProductId, batchNumber }
+  errorMessage String? @db.Text
+
+  items ShopifySyncItem[]
+
+  createdAt DateTime @default(now())
+
+  @@index([storeId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("jsa_shopify_syncs")
+}
+
+enum SyncStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Per-product sync status (for failures/retries)
+model ShopifySyncItem {
+  id     String      @id @default(cuid())
+  syncId String
+  sync   ShopifySync @relation(fields: [syncId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   DemoProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  status       ItemSyncStatus @default(PENDING)
+  shopifyId    String? // Shopify product GID
+  errorMessage String?        @db.Text
+  retryCount   Int            @default(0)
+
+  @@index([syncId])
+  @@index([productId])
+  @@index([status])
+  @@map("jsa_shopify_sync_items")
+}
+
+enum ItemSyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+// Per-store sync tracking (dirty flag per store)
+model ProductSyncStatus {
+  id        String       @id @default(cuid())
+  productId String
+  product   DemoProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storeId   String
+  store     ShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  needsSync  Boolean   @default(true)
+  shopifyId  String? // Shopify product GID for this store
+  lastSyncAt DateTime?
+
+  @@unique([productId, storeId])
+  @@index([storeId, needsSync])
+  @@map("jsa_product_sync_statuses")
+}
+
+// ============================================
+// Store Management Model
+// ============================================
+
+model StoreManagement {
+  storeId                           Int      @id @default(autoincrement()) @map("store_id")
+  storeName                         String   @map("store_name") @db.VarChar(200)
+  storeDesc                         String   @map("store_desc") @db.VarChar(400)
+  storeUrl                          String   @map("store_url") @db.VarChar(100)
+  storeOwn                          String   @map("store_own") @db.VarChar(100)
+  storeAdd                          String   @map("store_add") @db.VarChar(300)
+  storeEmail                        String   @map("store_email") @db.VarChar(200)
+  storePaypalId                     String   @map("store_paypal_id") @db.VarChar(255)
+  storeTmpl                         String   @map("store_tmpl") @db.VarChar(200)
+  storeMob                          String   @map("store_mob") @db.VarChar(100)
+  storeFax                          String   @map("store_fax") @db.VarChar(200)
+  status                            String   @default("1") @db.VarChar(1) // enum('0','1')
+  categoryIds                       String   @map("category_ids") @db.VarChar(255)
+  productIds                        String   @map("product_ids") @db.VarChar(255)
+  blogId                            String   @map("blog_id") @db.VarChar(20)
+  widgetKeyword                     String   @map("widget_keyword") @db.VarChar(255)
+  commission                        Int
+  taxRate                           Decimal  @default(0.0000) @map("tax_rate") @db.Decimal(15, 4)
+  autoPick                          String   @default("no") @map("auto_pick") @db.VarChar(3) // enum('yes','no')
+  priority                          Int      @default(0)
+  enableFailedListingTracking       String   @default("No") @map("enable_failed_listing_tracking") @db.VarChar(3) // enum('Yes','No')
+  enableCreateOrderAutomatically    Int?     @map("enable_create_order_automatically")
+  enableCreateProductsAutomatically Int?     @map("enable_create_products_automatically")
+  enableAutocorrectOrderStatus      Int?     @map("enable_autocorrect_order_status")
+  storePlatform                     String?  @map("store_platform") @db.VarChar(60)
+  storeOrderIntegrationApiHostname  String?  @map("store_order_integration_api_hostname") @db.Text
+  storeOrderIntegrationApiVersion   String?  @map("store_order_integration_api_version") @db.VarChar(50)
+  storeOrderIntegrationApiKey       String?  @map("store_order_integration_api_key") @db.VarChar(200)
+  storeOrderIntegrationApiPassword  String?  @map("store_order_integration_api_password") @db.VarChar(200)
+  storeTimezone                     String?  @map("store_timezone") @db.VarChar(120)
+  storeLocationId                   String?  @map("store_location_id") @db.VarChar(120)
+  storeFrontendUrl                  String?  @map("store_frontend_url") @db.VarChar(100)
+  storeVatNumber                    String   @map("store_vat_number") @db.VarChar(100)
+  smAppName                         String   @map("sm_app_name") @db.VarChar(50)
+  smAppApiKey                       String   @map("sm_app_api_key") @db.VarChar(255)
+  smAppSharedsecret                 String   @map("sm_app_sharedsecret") @db.VarChar(255)
+  smAppAccessToken                  String   @map("sm_app_access_token") @db.VarChar(255)
+  smAppHmac                         String   @map("sm_app_hmac") @db.VarChar(255)
+  smCreatedDate                     DateTime @map("sm_created_date")
+  smCreatedBy                       String   @map("sm_created_by") @db.VarChar(50)
+  smModifiedDate                    DateTime @default("1970-01-01T00:00:00Z") @updatedAt @map("sm_modified_date")
+  smModifiedBy                      String   @map("sm_modified_by") @db.VarChar(50)
+  channelId                         Int?     @map("channel_id")
+
+  // OAuth token storage (used by Allegro and any future OAuth-based marketplace)
+  oauthAccessToken                  String?  @map("oauth_access_token") @db.Text
+  oauthAccessTokenExpiry            DateTime? @map("oauth_access_token_expiry")
+  oauthRefreshToken                 String?  @map("oauth_refresh_token") @db.Text
+  oauthRefreshTokenExpiry           DateTime? @map("oauth_refresh_token_expiry")
+
+  @@index([storeUrl])
+  @@map("store_management")
+}
+
+// ============================================
+// Marketplace Orders Models
+// ============================================
+
+// Main marketplace orders table
+model MoMarketplaceOrder {
+  moId                        BigInt    @id @default(autoincrement()) @map("mo_id")
+  moStoreName                 String    @map("mo_store_name") @db.VarChar(32)
+  moStoreId                   Int       @map("mo_store_id")
+  moOrderId                   String    @map("mo_order_id") @db.VarChar(255)
+  moOrderPlaceDate            DateTime? @map("mo_order_place_date")
+  moOrderUpdateDate           DateTime? @map("mo_order_update_date")
+  moOrderShipByDate           DateTime? @map("mo_order_ship_by_date")
+  moOrderStatus               String?   @map("mo_order_status") @db.VarChar(255)
+  moMuosmId                   BigInt?   @map("mo_muosm_id") // Link to marketplace UKSS order status mapping
+  moOrderSubtotal             Decimal?  @map("mo_order_subtotal") @db.Decimal(10, 2)
+  moShippingTotal             Decimal?  @map("mo_shipping_total") @db.Decimal(10, 2)
+  moOrderTotal                Decimal   @map("mo_order_total") @db.Decimal(10, 2)
+  moOrderCurrency             String?   @map("mo_order_currency") @db.VarChar(255)
+  moOrderCustomerId           String?   @map("mo_order_customer_id") @db.VarChar(255)
+  moOrderCustomerEmail        String?   @map("mo_order_customer_email") @db.VarChar(255)
+  moCustomerPhone             String?   @map("mo_customer_phone") @db.VarChar(32)
+  moOrderCustomerName         String?   @map("mo_order_customer_name") @db.VarChar(255)
+  moOrderShippingMethod       String?   @map("mo_order_shipping_method") @db.VarChar(255)
+  moOrderShippingLine1        String?   @map("mo_order_shipping_line1") @db.VarChar(255)
+  moOrderShippingLine2        String?   @map("mo_order_shipping_line2") @db.VarChar(255)
+  moOrderShippingLine3        String?   @map("mo_order_shipping_line3") @db.VarChar(255)
+  moOrderShippingCountry      String?   @map("mo_order_shipping_country") @db.VarChar(255)
+  moOrderShippingCity         String?   @map("mo_order_shipping_city") @db.VarChar(255)
+  moOrderShippingState        String?   @map("mo_order_shipping_state") @db.VarChar(255)
+  moOrderShippingZipcode      String?   @map("mo_order_shipping_zipcode") @db.VarChar(10)
+  moUkssConversionRate        Decimal?  @map("mo_ukss_conversion_rate") @db.Decimal(10, 2)
+  moUkssOrderId               Int?      @map("mo_ukss_order_id")
+  moAmazonStoreId             String?   @map("mo_amazon_store_id") @db.VarChar(20)
+  moAmazonOrderId             String?   @map("mo_amazon_order_id") @db.VarChar(100)
+  moDeliverByDate             DateTime? @map("mo_deliver_by_date") @db.DateTime // LatestDeliveryDate for Amazon prime orders
+  moCreatedBy                 String    @map("mo_created_by") @db.VarChar(32)
+  moModifiedBy                String    @map("mo_modified_by") @db.VarChar(32)
+  moDateAdded                 DateTime  @map("mo_date_added")
+  moDateModified              DateTime  @map("mo_date_modified") @default(now()) @updatedAt
+  moBaselinkerOrderSource     String?   @map("mo_baselinker_order_source") @db.VarChar(100) // Source marketplace for BaseLinker orders (e.g., eBay, Amazon)
+  moExternalOrderId           String?   @map("mo_external_order_id") @db.VarChar(255) // External marketplace order ID from BaseLinker or Toffs
+
+  // Relations
+  products                    MopMarketplaceOrderProduct[]
+  statusHistory               MoshMarketplaceOrderStatusHistory[]
+
+  @@index([moStoreId])
+  @@index([moOrderId])
+  @@index([moStoreId, moOrderId])
+  @@index([moOrderStatus])
+  @@index([moUkssOrderId])
+  @@map("mo_marketplace_orders")
+}
+
+// Marketplace order products table
+model MopMarketplaceOrderProduct {
+  mopId                        BigInt    @id @default(autoincrement()) @map("mop_id")
+  mopStoreName                 String    @map("mop_store_name") @db.VarChar(255)
+  mopOrderId                   String    @map("mop_order_id") @db.VarChar(50)
+  mopMoId                      BigInt    @map("mop_mo_id")
+  moOrder                      MoMarketplaceOrder @relation(fields: [mopMoId], references: [moId], onDelete: Cascade)
+  mopProductId                 String?   @map("mop_product_id") @db.VarChar(50)
+  mopProductSku                String?   @map("mop_product_sku") @db.VarChar(50)
+  mopProductStatus             String?   @map("mop_product_status") @db.VarChar(50)
+  mopProductName               String?   @map("mop_product_name") @db.VarChar(255)
+  mopProductUpcEan             BigInt?   @map("mop_product_upc_ean")
+  mopProductPrice              Decimal   @map("mop_product_price") @db.Decimal(10, 2)
+  mopProductVatAmount          Decimal?  @map("mop_product_vat_amount") @db.Decimal(10, 2)
+  mopProductVatIncluded        String    @map("mop_product_vat_included") @default("0") @db.VarChar(1) // enum('0','1')
+  mopProductQuantity           BigInt?   @map("mop_product_quantity")
+  mopProductAttributeName      String?   @map("mop_product_attribute_name") @db.VarChar(255)
+  mopUkssProductSku            String    @map("mop_ukss_product_sku") @db.VarChar(50)
+  mopUkssProductId             String    @map("mop_ukss_product_id") @db.VarChar(50)
+  mopUkssOrdersProductsId      Int?      @map("mop_ukss_orders_products_id") // Link to UKSS orders_products table
+  mopExtraInfo                 String?   @map("mop_extra_info") @db.Text // Personalized order extra info (JSON string)
+  mopOrderStatusToUpdate       String    @map("mop_order_status_to_update") @default("Pending") @db.VarChar(255) // Order status to be updated on marketplace
+  mopApiResponse               String    @map("mop_api_response") @default("Waiting") @db.VarChar(255) // Marketplace API response message
+  mopOrderStatusOfOrder        String    @map("mop_order_status_of_order") @default("Pending") @db.VarChar(50) // enum('Pending','Confirm','Shipped','Cancel','Return')
+  mopUkssProductConfirmationStatus String? @map("mop_ukss_product_confirmation_status") @db.VarChar(50) // Product confirmation status on UKSS panel
+  mopUkssProductShippingStatus String?   @map("mop_ukss_product_shipping_status") @db.VarChar(50) // Product shipping status on UKSS panel
+  mopUkssProductCancelReason   String?   @map("mop_ukss_product_cancel_reason") @db.VarChar(255) // Cancellation reason if order canceled
+  mopUkssProductReturnReason   String?   @map("mop_ukss_product_return_reason") @db.VarChar(255) // Return reason if order is returned
+  mopUkssShippingCarrier       String?   @map("mop_ukss_shipping_carrier") @db.VarChar(255) // Shipping carrier used to deliver the order
+  mopUkssTrackingCode          String?   @map("mop_ukss_tracking_code") @db.VarChar(255) // Tracking code on the shipping label
+  customerCancellationRequest  String    @map("customer_cancellation_request") @default("0") @db.VarChar(1) // PM #164896 — enum('0','1'): customer requested cancellation on marketplace side
+  cancellationRequestDate      DateTime? @map("cancellation_request_date") // PM #164896 — when the cancellation request was captured
+  mopCreatedBy                 String    @map("mop_created_by") @db.VarChar(32)
+  mopModifiedBy                String    @map("mop_modified_by") @db.VarChar(32)
+  mopDateAdded                 DateTime  @map("mop_date_added")
+  mopDateModified              DateTime  @map("mop_date_modified") @default(now()) @updatedAt
+
+  @@index([mopMoId])
+  @@index([mopOrderId])
+  @@index([mopProductSku])
+  @@map("mop_marketplace_order_products")
+}
+
+// Marketplace order status history table
+model MoshMarketplaceOrderStatusHistory {
+  moshId                       BigInt    @id @default(autoincrement()) @map("mosh_id")
+  moshMoId                     BigInt    @map("mosh_mo_id")
+  moOrder                      MoMarketplaceOrder @relation(fields: [moshMoId], references: [moId], onDelete: Cascade)
+  moshMopId                    BigInt    @map("mosh_mop_id") @default(0) // Link to marketplace order product
+  moshMoOrderId                String    @map("mosh_mo_order_id") @db.VarChar(255)
+  moshMoOrderStatus            String    @map("mosh_mo_order_status") @db.VarChar(255)
+  moshMuosmId                  BigInt    @map("mosh_muosm_id") // Link to marketplace UKSS order status mapping
+  moshCreatedBy                String    @map("mosh_created_by") @db.VarChar(32)
+  moshModifiedBy               String    @map("mosh_modified_by") @db.VarChar(32)
+  moshDateAdded                DateTime  @map("mosh_date_added") @default(now())
+  moshDateModified             DateTime  @map("mosh_date_modified") @default(now()) @updatedAt
+
+  @@index([moshMoId], map: "fk_mosh_mo_id")
+  @@index([moshMuosmId], map: "fk_mosh_muosm_id")
+  @@map("mosh_marketplace_order_status_history")
+}
+
+// ============================================
+// Supporting Tables for Marketplace Orders
+// ============================================
+
+// New products variations table (for SKU lookup)
+model NewProductsVariation {
+  npvId                                       BigInt    @id @default(autoincrement()) @map("npv_id")
+  npvProductsId                               Int       @map("npv_products_id")
+  npvProductsName                             String?   @map("npv_products_name") @db.VarChar(225)
+  npvProductsModel                            String?   @map("npv_products_model") @db.VarChar(225)
+  npvOnSitePrice                              Decimal?  @map("npv_onsite_price") @db.Decimal(15, 4)
+  npvSku                                      String?   @unique @map("npv_products_sku") @db.VarChar(255)
+  npvProductsBarcodes                         String?   @map("npv_products_barcodes") @db.VarChar(13)
+  npvSizeOptionsValueId                       Int?      @map("npv_size_options_value_id")
+  npvProductsOptionsValuesToProductsOptionsId Int?      @map("npv_products_options_values_to_products_options_id")
+  npvQuantities                               Int       @default(0) @map("npv_quantities")
+  npvDeleteStatus                             String    @default("0") @map("npv_delete_status")
+  toffsSku                                    String?   @map("toffs_sku") @db.VarChar(255)
+
+  // Relations
+  marketplaceListings                         MarketplaceListing[]
+
+  @@index([npvSku])
+  @@index([npvProductsId])
+  @@map("new_products_variations")
+}
+
+// ============================================
+// FC Scan / SMS Product & Box Tables
+// ============================================
+
+// Legacy ukssmain table shared with SMS. created is clean as of 03-Aug-2026: the 2
+// '0000-00-00 00:00:00' rows (seasons_id 128 and 129) were backfilled and the column
+// now carries a DB-side DEFAULT current_timestamp().
+//
+// migration_date_added and migration_date_modified are deliberately NOT declared below.
+// They DO exist in the database, are NOT NULL with their own DB-side DEFAULT
+// current_timestamp() (migration_date_modified also ON UPDATE current_timestamp()), and
+// must stay. Both are clean today (0 zero-dates, unlike `teams`, which holds 4 in each),
+// so leaving them out keeps the Prisma row decoder from ever touching them should a
+// zero-date appear. Their absence here is NOT license for `prisma db push` / `migrate`
+// to drop them — pushing this schema at MySQL would generate a destructive DROP COLUMN
+// for both.
+model Season {
+  seasonsId Int    @id @default(autoincrement()) @map("seasons_id")
+  // UNIQUE at the DB level (index `season_2`), not a plain index like teams.team_name.
+  // Note seasons_id 128 already occupies the '' slot, so blank is not insertable twice.
+  season    String @unique(map: "season_2") @db.VarChar(11)
+  // Both NOT NULL with no DB default: every write must supply a value
+  // (legacy passes '' when unused — 197/212 rows have an empty tesco_seasons).
+  tescoSeasons          String   @map("tesco_seasons") @db.VarChar(11)
+  rueducommerceSeason   String   @map("rueducommerce_season") @db.VarChar(11)
+  sort                  Int
+  // dbgenerated, not now(): now() makes Prisma fill this client-side in UTC, which
+  // drifts from the DB's own current_timestamp() default that legacy relies on.
+  created               DateTime @default(dbgenerated("current_timestamp()")) @db.DateTime(0)
+
+  productLists    ProductList[]
+  smsProductsLogs SmsProductsLog[]
+
+  @@index([sort], map: "sort")
+  @@map("seasons")
+}
+
+// Legacy ukssmain table shared with SMS. created is clean as of 03-Aug-2026: the 30
+// '0000-00-00 00:00:00' rows were backfilled and the column now carries a DB-side
+// DEFAULT current_timestamp(), so it is safe to read through Prisma directly.
+// migration_date_added and migration_date_modified still hold 4 zero-date rows each,
+// and the Prisma row decoder throws on those, so a bare findMany()/findUnique() that
+// decodes every scalar will still fail. Reads must `select` the columns they need.
+//
+// Those two columns are therefore deliberately NOT declared below. They DO exist in
+// the database, carry their own DB-side DEFAULT current_timestamp(), and must stay.
+// Their absence here is intentional (it keeps the decoder from ever touching the
+// zero-date rows) and is NOT license for `prisma db push` / `migrate` to drop them —
+// pushing this schema at MySQL would generate a destructive DROP COLUMN for both.
+model Team {
+  teamsId               Int                @id @default(autoincrement()) @map("teams_id")
+  teamName              String             @map("team_name") @db.VarChar(55)
+  sort                  Int
+  created               DateTime           @default(dbgenerated("current_timestamp()")) @db.DateTime(0)
+  // The DB column has no explicit DEFAULT; MariaDB falls back to the first ENUM
+  // member ('Clothing') when the column is omitted, which is what the legacy
+  // INSERT relied on. Declared here so Prisma reproduces that same value.
+  teamType              TeamType           @default(Clothing) @map("team_type")
+  invalidTeamForAmazon  TeamAmazonValidity @default(Valid) @map("invalid_team_for_amazon")
+
+  productLists    ProductList[]
+  smsProductsLogs SmsProductsLog[]
+
+  @@index([teamName], map: "team_name")
+  @@index([sort], map: "sort")
+  @@index([teamType], map: "team_type")
+  @@map("teams")
+}
+
+// Legacy ukssmain table shared with SMS. Only the primary key and the two foreign keys
+// used by the delete guards in teams.service.ts / seasons.service.ts are declared; the
+// remaining columns (sms_users_id, product_lists_id, the previous_*/current_* pairs,
+// modified, ip_address, migration_date_added, migration_date_modified) DO exist in the
+// database and must stay — their absence here is NOT license for `prisma db push` /
+// `migrate` to drop them, which is what pushing this schema at MySQL would generate.
+model SmsProductsLog {
+  smsProductsLogsId Int @id @default(autoincrement()) @map("sms_products_logs_id")
+  teamsId           Int @map("teams_id")
+  seasonsId         Int @map("seasons_id")
+
+  team   Team   @relation(fields: [teamsId], references: [teamsId])
+  season Season @relation(fields: [seasonsId], references: [seasonsId])
+
+  @@index([teamsId], map: "fk_Team")
+  @@index([seasonsId], map: "fk_Season")
+  @@map("sms_products_logs")
+}
+
+enum TeamType {
+  Clothing
+  KidsBoots     @map("Kids Boots")
+  AdultsBoots   @map("Adults Boots")
+  PumaKidsBoots @map("Puma Kids Boots")
+}
+
+enum TeamAmazonValidity {
+  Valid
+  Invalid
+}
+
+model BoxList {
+  boxListsId  Int    @id @default(autoincrement()) @map("box_lists_id")
+  boxCode     String @map("box_code") @db.VarChar(155)
+
+  productQuantities ProductQuantity[]
+
+  @@index([boxCode])
+  @@map("box_lists")
+}
+
+model ProductType {
+  typeId           Int      @id @default(autoincrement()) @map("type_id")
+  typeName         String   @map("type_name") @db.VarChar(255)
+  typeHandler      String   @map("type_handler") @db.VarChar(255)
+  typeMasterType   Int      @map("type_master_type") @default(1)
+  allowAddToCart   String   @map("allow_add_to_cart") @db.Char(1)
+  defaultImage    String   @map("default_image") @db.VarChar(255)
+  dateAdded       DateTime @map("date_added") @db.DateTime
+  lastModified    DateTime @map("last_modified") @db.DateTime
+
+  productLists ProductList[]
+
+  @@map("product_types")
+}
+
+model ProductList {
+  productListsId        Int      @id @default(autoincrement()) @map("product_lists_id")
+  teamsId               Int      @map("teams_id")
+  productCode           String?  @map("product_code") @db.VarChar(200)
+  productName           String   @map("product_name") @db.VarChar(140)
+  seasonsId             Int      @map("seasons_id")
+  productTypeId         Int?     @map("product_type") @db.Int
+  manufacturersId       Int?     @map("manufacturers_id") @db.Int
+  parentProductListsId  Int      @default(0) @map("parent_product_lists_id")
+  price                 Decimal? @map("price") @db.Decimal(10, 2)
+  frontImageUrl         String?  @map("front_image_url") @db.VarChar(500)
+  backImageUrl          String?  @map("back_image_url") @db.VarChar(500)
+  additionalImageUrl    String?  @map("additional_image_url") @db.VarChar(500)
+  allowsPersonalisation Boolean  @default(false) @map("allows_personalisation") @db.TinyInt
+  // The commodity code a parcel leaving the UK is declared under (PMS #166509).
+  // Held against the parent product code and carried by every child.
+  hsCode                String?  @map("hs_code") @db.VarChar(20)
+
+  team              Team        @relation(fields: [teamsId], references: [teamsId])
+  season            Season      @relation(fields: [seasonsId], references: [seasonsId])
+  productType       ProductType? @relation(fields: [productTypeId], references: [typeId])
+  productQuantities ProductQuantity[]
+
+  @@index([teamsId])
+  @@index([seasonsId])
+  @@index([productCode])
+  @@index([productName])
+  @@index([productTypeId])
+  @@index([manufacturersId])
+  @@map("product_lists")
+}
+
+// Junction table: product_quantities.size_id -> products_options_values
+model ProductsOptionsValuesToProductsOption {
+  productsOptionsValuesToProductsOptionsId Int @id @map("products_options_values_to_products_options_id")
+  productsOptionsValuesId                   Int @map("products_options_values_id")
+
+  productsOptionsValue ProductsOptionsValue @relation(fields: [productsOptionsValuesId], references: [productsOptionsValuesId])
+  productQuantities     ProductQuantity[]
+
+  @@index([productsOptionsValuesId])
+  @@map("products_options_values_to_products_options")
+}
+
+model ProductQuantity {
+  productQuantitiesId Int    @id @default(autoincrement()) @map("product_quantities_id")
+  productListsId      Int    @map("product_lists_id")
+  sizeId              Int    @map("size_id")
+  smsSizeGroupsId     Int?   @map("sms_size_groups_id")
+  boxListsId          Int    @map("box_lists_id")
+  barcode             String @db.VarChar(13)
+  quantity            Int
+  sizeWeight          Decimal @map("size_weight") @db.Decimal(7, 3)
+  fcProductId         Int?   @map("fc_product_id")
+  // The Green FC update cron's queue flag: it picks a barcode up while this is
+  // NULL or not 1, and sets it to 1 once pushed. Int and not Boolean because the
+  // legacy semantics are three-valued (NULL / 0 / 1) and the SMS side compares
+  // it with `!= 1`, which Boolean would obscure.
+  fcUpdateProductBit  Int?   @map("fc_update_product_bit") @db.TinyInt
+
+  productList  ProductList                          @relation(fields: [productListsId], references: [productListsId])
+  boxList      BoxList                              @relation(fields: [boxListsId], references: [boxListsId])
+  sizeMapping ProductsOptionsValuesToProductsOption @relation(fields: [sizeId], references: [productsOptionsValuesToProductsOptionsId])
+
+  @@unique([productListsId, sizeId, boxListsId])
+  @@unique([fcProductId])
+  @@index([productListsId])
+  @@index([boxListsId])
+  @@index([sizeId])
+  @@index([smsSizeGroupsId])
+  @@index([barcode])
+  @@index([barcode, boxListsId])
+  @@map("product_quantities")
+}
+
+// Currency table (for conversion rates)
+//
+// Corrected against the live `ukssmain.currencies` DESCRIBE for Redmine #166532.
+// The previous mapping declared `value` as Decimal(15,4) while the column is
+// Decimal(13,8), and omitted last_updated and decimal_places entirely — the three
+// fields the Medusa price sync depends on. Rates are read as Decimal and converted
+// with .toString() so the full 8 decimal places survive; a Number() anywhere in
+// that path reintroduces float drift into ten million generated prices.
+//
+// Read-only mapping. Nothing in this application writes to `currencies`; the
+// legacy Zen Cart cron owns it (see medusa-price-sync/rate-source.ts).
+model Currency {
+  currencyId  BigInt    @id @default(autoincrement()) @map("currencies_id")
+  code        String    @db.Char(3)
+  title       String    @db.VarChar(32)
+  // "1 GBP = value <code>". GBP itself is held at exactly 1.00000000.
+  value       Decimal   @db.Decimal(13, 8)
+  // Minor-unit digits, stored as a char. UKSS is the system of record for what
+  // UKSS charges, so this — not Medusa's currency precision — is the rounding
+  // authority passed to the sync.
+  decimalPlaces String? @map("decimal_places") @db.Char(1)
+  // Written by whichever legacy cron last ran. This is the snapshot's as-of
+  // timestamp and the only staleness signal available.
+  lastUpdated DateTime? @map("last_updated")
+  symbolRight String?   @map("symbol_right") @db.VarChar(24)
+  symbolLeft  String?   @map("symbol_left") @db.VarChar(24)
+
+  @@index([code])
+  @@map("currencies")
+}
+
+// Country table (for country lookup and shipping info)
+model Country {
+  countriesId                         Int       @id @default(autoincrement()) @map("countries_id")
+  fcCountryId                         Int       @map("fc_country_id")
+  countriesName                       String    @map("countries_name") @db.VarChar(100)
+  countriesIsoCode2                   String    @map("countries_iso_code_2") @db.Char(2)
+  countriesIsoCode3                   String    @map("countries_iso_code_3") @db.Char(3)
+  addressFormatId                     Int       @map("address_format_id") @default(0)
+  weight                              Decimal   @db.Decimal(15, 4)
+  shipmentServicesId                  Int       @map("shipment_services_id")
+  currenciesId                        Int       @map("currencies_id")
+  shippingStatus                      String    @map("shipping_status") @db.VarChar(1) @default("0")
+  countryFlagPath                     String    @map("country_flag_path") @db.VarChar(255)
+  message                             String    @db.VarChar(1000)
+  europeanCountry                     String    @map("european_country") @db.VarChar(4)
+  postcodesRequireCustomsInfo         String    @map("c_postcodes_that_require_customs_info") @db.VarChar(50)
+  countriesVatRate                    Decimal?  @map("countries_vat_rate") @db.Decimal(4, 2)
+
+  @@index([countriesName])
+  @@index([countriesIsoCode2])
+  @@index([countriesIsoCode3])
+  @@index([addressFormatId])
+  @@index([shipmentServicesId])
+  @@map("countries")
+}
+
+// Products Attributes table (UKSS product options and variants)
+model ProductsAttribute {
+  productsAttributesId                    Int       @id @default(autoincrement()) @map("products_attributes_id")
+  productsId                              Int       @map("products_id") @default(0)
+  paSku                                   String?   @unique @map("pa_sku") @db.VarChar(25)
+  optionsId                               Int       @map("options_id") @default(0)
+  optionsValuesId                         Int       @map("options_values_id") @default(0)
+  optionsValuesPrice                      Decimal   @map("options_values_price") @db.Decimal(15, 4) @default(0.0000)
+  optionsValuesSku                        String    @map("options_values_sku") @db.VarChar(30)
+  pricePrefix                             String    @map("price_prefix") @db.Char(1)
+  productsOptionsSortOrder                Int       @map("products_options_sort_order") @default(0)
+  productAttributeIsFree                  Boolean   @map("product_attribute_is_free") @default(false)
+  productsAttributesWeight                Float     @map("products_attributes_weight") @default(0)
+  productsAttributesWeightPrefix          String    @map("products_attributes_weight_prefix") @db.Char(1)
+  attributesDisplayOnly                   Boolean   @map("attributes_display_only") @default(false)
+  attributesDefault                       Boolean   @map("attributes_default") @default(false)
+  attributesDiscounted                    Boolean   @map("attributes_discounted") @default(true)
+  attributesImage                         String?   @map("attributes_image") @db.VarChar(64)
+  attributesPriceBaseIncluded             Boolean   @map("attributes_price_base_included") @default(true)
+  attributesPriceOnetime                  Decimal   @map("attributes_price_onetime") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceFactor                   Decimal   @map("attributes_price_factor") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceFactorOffset             Decimal   @map("attributes_price_factor_offset") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceFactorOnetime            Decimal   @map("attributes_price_factor_onetime") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceFactorOnetimeOffset      Decimal   @map("attributes_price_factor_onetime_offset") @db.Decimal(15, 4) @default(0.0000)
+  attributesQtyPrices                     String?   @map("attributes_qty_prices") @db.Text
+  attributesQtyPricesOnetime              String?   @map("attributes_qty_prices_onetime") @db.Text
+  attributesPriceWords                    Decimal   @map("attributes_price_words") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceWordsFree                Int       @map("attributes_price_words_free") @default(0)
+  attributesPriceLetters                  Decimal   @map("attributes_price_letters") @db.Decimal(15, 4) @default(0.0000)
+  attributesPriceLettersFree              Int       @map("attributes_price_letters_free") @default(0)
+  attributesRequired                      Boolean   @map("attributes_required") @default(false)
+  lsReferenceProduct                      String    @map("lsReferenceProduct") @db.VarChar(20)
+  qunatity                                String    @map("qunatity") @db.VarChar(20) // Note: typo in original table name
+  dateAdded                               DateTime  @map("date_added") @default(now()) @updatedAt
+  productAttributeSalePriceAll            Decimal   @map("product_attribute_sale_price_all") @db.Decimal(15, 4)
+  productAttributeSalePriceCat            Decimal   @map("product_attribute_sale_price_cat") @db.Decimal(15, 4)
+  productAttributeSalePriceProd           Decimal   @map("product_attribute_sale_price_prod") @db.Decimal(15, 4)
+  attributeSaleStartDate                  DateTime  @map("attribute_sale_start_date") @db.Date
+  attributeSaleEndDate                    DateTime  @map("attribute_sale_end_date") @db.Date
+  attributeSaleType                       String    @map("attribute_sale_type") @db.VarChar(1) // enum('0','1','2')
+  quantity                                Int       @map("quantity")
+  subbuteoTshirtsColour                   Int       @map("subbuteo_tshirts_colour") @default(0)
+  subbuteoPlayerColour                    Int       @map("subbuteo_player_colour") @default(0)
+  subbuteoTextColour                      Int       @map("subbuteo_text_colour") @default(0)
+  heartColour                             Int       @map("heart_colour") @default(0)
+  shortname                               String?   @map("shortname") @db.VarChar(10)
+  dateModified                            DateTime  @map("date_modified")
+  rakutenProduct                          String    @map("rakuten_product") @db.VarChar(3) // enum('No','Yes')
+  lazadaProduct                           Boolean   @map("lazada_product") @default(false)
+  paStatus                                Boolean   @map("pa_status") @default(true)
+
+  @@index([productsId, optionsId, optionsValuesId], map: "idx_id_options_id_values_zen")
+  @@index([productsOptionsSortOrder], map: "idx_opt_sort_order_zen")
+  @@index([optionsValuesPrice])
+  @@index([optionsValuesId])
+  @@index([shortname])
+  @@index([dateModified])
+  @@index([rakutenProduct])
+  @@map("products_attributes")
+}
+
+// Products Options table (UKSS product option types like Size, Color, etc.)
+model ProductsOption {
+  productsOptionsId              Int       @map("products_options_id")
+  languageId                     Int       @map("language_id") @default(1)
+  productsOptionsName            String    @map("products_options_name") @db.VarChar(32)
+  productsOptionsSortOrder       Int       @map("products_options_sort_order") @default(0)
+  productsOptionsType            Int       @map("products_options_type") @default(0)
+  productsOptionsLength          Int       @map("products_options_length") @db.SmallInt @default(32)
+  productsOptionsComment         String?   @map("products_options_comment") @db.VarChar(64)
+  productsOptionsSize            Int       @map("products_options_size") @db.SmallInt @default(32)
+  productsOptionsImagesPerRow    Int?      @map("products_options_images_per_row") @default(5)
+  productsOptionsImagesStyle     Int?      @map("products_options_images_style") @default(0)
+  productsOptionsRows            Int       @map("products_options_rows") @db.SmallInt @default(1)
+  categoryId                     Int?      @map("category_id") @default(0)
+  productsOptionsStatus          Int       @map("products_options_status") @db.TinyInt
+
+  @@id([productsOptionsId, languageId])
+  @@index([languageId], map: "idx_lang_zen")
+  @@index([languageId, productsOptionsId], map: "RS_DanB_18")
+  @@index([productsOptionsSortOrder], map: "idx_products_options_sort_order_zen")
+  @@index([productsOptionsName], map: "idx_products_options_name_zen")
+  @@index([productsOptionsId])
+  @@index([productsOptionsName], map: "products_options_name")
+  @@map("products_options")
+}
+
+// Products Options Values table (UKSS product option values like S, M, L, XL, etc.)
+model ProductsOptionsValue {
+  productsOptionsValuesId          Int       @id @map("products_options_values_id")
+  languageId                       Int       @map("language_id") @default(1)
+  productsOptionsValuesName        String    @map("products_options_values_name") @db.VarChar(64)
+  productsOptionsValuesSortOrder   Int       @map("products_options_values_sort_order") @default(0)
+  nonVat                           String    @map("non_vat") @db.VarChar(3) // enum('No','Yes')
+  mappedUsSize                     String?   @map("mapped_us_size") @db.VarChar(64)
+  shortname                        String    @map("shortname") @db.VarChar(50)
+  sizenameInCopasheet              String    @map("sizename_in_copasheet") @db.VarChar(50)
+  image                            String?   @map("image") @db.VarChar(200)
+  defaultPrice                     Decimal   @map("defualt_price") @db.Decimal(15, 4) @default(0.0000) // Note: typo in original column name
+  mappedSpeySoftwareSizes          String?   @map("mapped_spey_software_sizes") @db.VarChar(1) // enum('0','1')
+
+  sizeOptionMappings               ProductsOptionsValuesToProductsOption[]
+
+  @@index([productsOptionsValuesName], map: "idx_products_options_values_name_zen")
+  @@index([productsOptionsValuesSortOrder], map: "idx_products_options_values_sort_order_zen")
+  @@index([productsOptionsValuesId])
+  @@index([nonVat])
+  @@map("products_options_values")
+}
+
+// PayPal IPN (Instant Payment Notification) table
+model Paypal {
+  paypalIpnId              Int       @map("paypal_ipn_id") @default(autoincrement())
+  orderId                  Int       @map("order_id") @default(0)
+  marketplaceOrderId       String?   @map("marketplace_order_id") @db.VarChar(255)
+  txnType                  String    @map("txn_type") @db.VarChar(40)
+  moduleName               String    @map("module_name") @db.VarChar(40)
+  moduleMode               String    @map("module_mode") @db.VarChar(40)
+  reasonCode               String?   @map("reason_code") @db.VarChar(40)
+  paymentType              String    @map("payment_type") @db.VarChar(40)
+  paymentStatus            String    @map("payment_status") @db.VarChar(32)
+  pendingReason            String?   @map("pending_reason") @db.VarChar(32)
+  invoice                  String?   @map("invoice") @db.VarChar(128)
+  mcCurrency               String    @map("mc_currency") @db.Char(3)
+  firstName                String    @map("first_name") @db.VarChar(32)
+  lastName                 String    @map("last_name") @db.VarChar(32)
+  payerBusinessName        String?   @map("payer_business_name") @db.VarChar(128)
+  addressName              String?   @map("address_name") @db.VarChar(64)
+  addressStreet            String?   @map("address_street") @db.VarChar(254)
+  addressCity              String?   @map("address_city") @db.VarChar(120)
+  addressState             String?   @map("address_state") @db.VarChar(120)
+  addressZip               String?   @map("address_zip") @db.VarChar(10)
+  addressCountry           String?   @map("address_country") @db.VarChar(64)
+  addressStatus            String?   @map("address_status") @db.VarChar(11)
+  payerEmail               String    @map("payer_email") @db.VarChar(128)
+  payerId                  String    @map("payer_id") @db.VarChar(32)
+  payerStatus              String    @map("payer_status") @db.VarChar(10)
+  paymentDate              DateTime  @map("payment_date")
+  business                 String    @map("business") @db.VarChar(128)
+  receiverEmail            String    @map("receiver_email") @db.VarChar(128)
+  receiverId               String    @map("receiver_id") @db.VarChar(32)
+  txnId                    String    @map("txn_id") @db.VarChar(20)
+  parentTxnId              String?   @map("parent_txn_id") @db.VarChar(20)
+  numCartItems             Int       @map("num_cart_items") @db.UnsignedTinyInt @default(1)
+  mcGross                  Decimal   @map("mc_gross") @db.Decimal(7, 2) @default(0.00)
+  mcFee                    Decimal   @map("mc_fee") @db.Decimal(7, 2) @default(0.00)
+  paymentGross             Decimal?  @map("payment_gross") @db.Decimal(7, 2)
+  paymentFee               Decimal?  @map("payment_fee") @db.Decimal(7, 2)
+  settleAmount             Decimal?  @map("settle_amount") @db.Decimal(7, 2)
+  settleCurrency           String?   @map("settle_currency") @db.Char(3)
+  exchangeRate             Decimal?  @map("exchange_rate") @db.Decimal(4, 2)
+  notifyVersion            Decimal   @map("notify_version") @db.Decimal(2, 1) @default(0.0)
+  verifySign               String    @map("verify_sign") @db.VarChar(128)
+  lastModified             DateTime  @map("last_modified")
+  dateAdded                DateTime  @map("date_added")
+  memo                     String?   @map("memo") @db.Text
+  orderCreated             Int       @map("order_created") @db.TinyInt @default(0)
+  isPaymentCapture         Int       @map("is_payment_capture") @db.TinyInt @default(0)
+
+  @@id([paypalIpnId, txnId])
+  @@index([paypalIpnId], map: "idx_paypal_paypal_ipn_id")
+  @@index([orderId], map: "idx_zen_order_id_zen")
+  @@index([txnId])
+  @@index([paymentStatus], map: "paypal_payment_status_IDX")
+  @@index([pendingReason], map: "paypal_pending_reason_IDX")
+  @@map("paypal")
+}
+
+// Marketplace UKSS Order Status Mappings table
+model MuosmMarketplcaeUkssOrderStatusMapping {
+  muosmId           BigInt   @id @default(autoincrement()) @map("muosm_id")
+  muosmStoreName    String?  @map("muosm_store_name") @db.VarChar(255)
+  muosmStoreId      BigInt   @map("muosm_store_id")
+  muosmMoStatus     String   @map("muosm_mo_status") @db.VarChar(255)
+  muosmOrdersStatus BigInt   @map("muosm_orders_status")
+  muosmCreatedBy    String   @map("muosm_created_by") @db.VarChar(32)
+  muosmModifiedBy   String   @map("muosm_modified_by") @db.VarChar(32)
+  muosmDateAdded    DateTime @default(now()) @map("muosm_date_added")
+  muosmDateModified DateTime @default(now()) @updatedAt @map("muosm_date_modefied")
+
+  @@index([muosmStoreId])
+  @@index([muosmOrdersStatus])
+  @@index([muosmStoreId, muosmOrdersStatus])
+  @@map("muosm_marketplcae_ukss_order_status_mappings")
+}
+
+// ============================================
+// Marketplace Listings Model
+// ============================================
+
+// Tracks product listings across multiple marketplaces and their sync status
+model MarketplaceListing {
+  marketplaceListingsId        Int       @id @default(autoincrement()) @map("marketplace_listings_id")
+  productsId                   Int       @map("products_id")
+  storeId                      Int       @map("store_id")
+  marketplaceProductsId        Int?      @map("marketplace_products_id")
+  productsSku                  String?   @map("products_sku") @db.VarChar(25)
+  upc                          String?   @map("upc") @db.VarChar(13)
+  ean                          String?   @map("ean") @db.VarChar(13)
+  gtin                         String?   @map("gtin") @db.VarChar(13)
+  ukSsSizeLabel                String?   @map("ukss_size_label") @db.VarChar(70)
+  
+  createdAt                    DateTime  @default(now()) @map("created_at")
+  updatedAt                    DateTime  @default(now()) @updatedAt @map("updated_at")
+  
+  marketplaceItemIdentifier    String?   @map("marketplace_item_identifier") @db.VarChar(25)
+  marketplaceListingStatus     MarketplaceListingStatus @default(draft) @map("marketplace_listing_status")
+  
+  lastSyncedQuantity           Int?      @map("last_synced_quantity")
+  lastSyncedPrice              Decimal?  @map("last_synced_price") @db.Decimal(13, 2)
+  lastSyncedSpecialPrice       Decimal?  @map("last_synced_special_price") @db.Decimal(13, 2)
+  lastSyncedPriceCurrency      String?   @map("last_synced_price_currency") @db.Char(3)
+  
+  priceAdjustment              Decimal   @default(0) @map("price_adjustment") @db.Decimal(10, 2)
+  
+  lastSyncStatus               MarketplaceSyncStatus @default(pending) @map("last_sync_status")
+  lastSyncedAt                 DateTime? @map("last_synced_at")
+  retryCount                   Int       @default(0) @map("retry_count") @db.TinyInt
+  
+  apiLastErrorCode             String?   @map("api_last_error_code") @db.VarChar(50)
+  apiLastErrorMessage          String?   @map("api_last_error_message") @db.Text
+
+  // Relations
+  newProduct                   NewProduct?            @relation(fields: [productsId], references: [products_id])
+  newProductVariation          NewProductsVariation?  @relation(fields: [productsSku], references: [npvSku])
+
+  @@unique([productsId, storeId, productsSku], name: "product_store_sku_unique")
+  @@index([storeId], name: "idx_store_id")
+  @@index([productsId], name: "idx_product_id")
+  @@index([lastSyncStatus], name: "idx_last_sync_status")
+  @@index([marketplaceListingStatus], name: "idx_listing_status")
+  @@index([lastSyncedAt], name: "idx_last_synced")
+  @@index([marketplaceItemIdentifier], name: "idx_marketplace_item_id")
+  @@index([productsSku], name: "idx_marketplace_sku")
+  @@map("marketplace_listings")
+}
+
+enum MarketplaceListingStatus {
+  active
+  inactive
+  draft
+  paused
+  suspended
+  deleted
+  confirmed
+}
+
+enum MarketplaceSyncStatus {
+  success
+  failed
+  pending
+  retrying
+}
+
+// ============================================
+// eBay Reconciliation Dashboard
+// Spec: docs/superpowers/specs/2026-07-17-ebay-reconciliation-dashboard-design.md
+// ============================================
+
+// One row per snapshot run. The `running` status row doubles as the concurrency lock.
+model EbaySnapshotRun {
+  id                Int                   @id @default(autoincrement())
+  storeId           Int                   @map("store_id")
+  triggerSource     EbaySnapshotTrigger   @map("trigger_source")
+  triggeredBy       String?               @map("triggered_by") @db.VarChar(100)
+  status            EbaySnapshotRunStatus @default(running)
+  startedAt         DateTime              @default(now()) @map("started_at")
+  finishedAt        DateTime?             @map("finished_at")
+  pagesFetched      Int                   @default(0) @map("pages_fetched")
+  listingsFetched   Int                   @default(0) @map("listings_fetched")
+  variationsFetched Int                   @default(0) @map("variations_fetched")
+  summaryJson       String?               @map("summary_json") @db.Text
+  errorMessage      String?               @map("error_message") @db.Text
+
+  @@index([storeId, status], name: "idx_recon_run_store_status")
+  @@index([storeId, startedAt], name: "idx_recon_run_store_started")
+  @@map("jsa_ebay_snapshot_runs")
+}
+
+enum EbaySnapshotTrigger {
+  cron
+  manual
+}
+
+enum EbaySnapshotRunStatus {
+  running
+  completed
+  failed
+}
+
+// Raw eBay state: one row per (run, ItemID, variation SKU); sku NULL for
+// single-SKU listings without a seller SKU. utf8mb4 sku matches products_sku.
+model EbayListingSnapshot {
+  id           Int      @id @default(autoincrement())
+  runId        Int      @map("run_id")
+  itemId       String   @map("item_id") @db.VarChar(20)
+  sku          String?  @db.VarChar(100)
+  title        String   @db.VarChar(255)
+  isVariation  Boolean  @default(false) @map("is_variation")
+  price        Decimal? @db.Decimal(10, 2)
+  currency     String?  @db.VarChar(3)
+  qtyListed    Int      @default(0) @map("qty_listed")
+  qtySold      Int      @default(0) @map("qty_sold")
+  qtyAvailable Int      @default(0) @map("qty_available")
+
+  @@index([runId, itemId], name: "idx_recon_snap_run_item")
+  @@index([runId, sku], name: "idx_recon_snap_run_sku")
+  @@map("jsa_ebay_listing_snapshots")
+}
+
+// Precomputed diff: one row per classified (ItemID, SKU) pair per run.
+// The ONLY table the dashboard DataTable queries.
+model EbayReconciliationResult {
+  id                Int                @id @default(autoincrement())
+  runId             Int                @map("run_id")
+  storeId           Int                @map("store_id")
+  itemId            String             @map("item_id") @db.VarChar(20)
+  sku               String?            @db.VarChar(100)
+  category          EbayReconCategory
+  dbListingStatus   String?            @map("db_listing_status") @db.VarChar(20)
+  dbLastSyncedQty   Int?               @map("db_last_synced_qty")
+  dbLastSyncedPrice Decimal?           @map("db_last_synced_price") @db.Decimal(13, 2)
+  dbErrorCode       String?            @map("db_error_code") @db.VarChar(50)
+  ebayQtyAvailable  Int?               @map("ebay_qty_available")
+  ebayPrice         Decimal?           @map("ebay_price") @db.Decimal(10, 2)
+  ebayTitle         String?            @map("ebay_title") @db.VarChar(255)
+  browseChecked     Boolean            @default(false) @map("browse_checked")
+  browseStatus      String?            @map("browse_status") @db.VarChar(20)
+  browseQty         Int?               @map("browse_qty")
+  actionTaken       String?            @map("action_taken") @db.VarChar(30)
+  actionAt          DateTime?          @map("action_at")
+  actionBy          String?            @map("action_by") @db.VarChar(100)
+
+  @@index([runId, category], name: "idx_recon_res_run_category")
+  @@index([runId, itemId], name: "idx_recon_res_run_item")
+  @@index([runId, sku], name: "idx_recon_res_run_sku")
+  @@map("jsa_ebay_reconciliation_results")
+}
+
+enum EbayReconCategory {
+  unmanaged
+  status_mismatch
+  managed_ghost
+  unmatched_sku
+  oversell_suspect
+  qty_mismatch
+  price_mismatch
+  managed_ok
+}
+
+// Audit log of every UI/CLI-triggered reconciliation action. NEVER purged.
+model EbayReconciliationAction {
+  id          Int                       @id @default(autoincrement())
+  runId       Int?                      @map("run_id")
+  action      String                    @db.VarChar(30)
+  itemIdsJson String                    @map("item_ids_json") @db.Text
+  dryRun      Boolean                   @map("dry_run")
+  requestedBy String                    @map("requested_by") @db.VarChar(100)
+  requestedAt DateTime                  @default(now()) @map("requested_at")
+  outcomeJson String?                   @map("outcome_json") @db.Text
+  status      EbayReconActionStatus
+  @@index([requestedAt], name: "idx_recon_action_requested")
+  @@map("jsa_ebay_reconciliation_actions")
+}
+
+enum EbayReconActionStatus {
+  completed
+  failed
+}
+
+// ============================================
+// Debenhams Inventory Upload Module
+// ============================================
+
+// Tracks each Debenhams Delta CSV upload and its processing outcome
+model DebenhamsImportLog {
+  id                Int      @id @default(autoincrement())
+  filename          String   @db.VarChar(255)
+  csvFilename       String?  @db.VarChar(255)
+  status            String   @db.VarChar(20)
+  totalRows         Int?
+  inserted          Int?
+  skippedInvalid    Int?
+  skippedNotInNpv   Int?
+  skippedDuplicates Int?
+  failedInserts     Int?
+  offersCreated     Int?
+  offersFailed      Int?
+  errorMessage      String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  @@map("debenhams_import_logs")
+}
+
+// new_products
+model NewProduct {
+  products_id                                   Int      @id
+  products_name                                 String   @db.Text
+  products_description                          String?  @db.Text
+  np_grade                                      String   @db.VarChar(20)
+  language_id                                   Int
+  products_type                                 Int
+  products_quantity                             Int
+  products_model                                String?  @db.VarChar(200)  @unique
+  products_image                                String?  @db.VarChar(300)
+  products_banner                               String   @db.VarChar(64)
+  products_banner_url                           String?  @db.VarChar(100)
+  products_price                                Decimal  @db.Decimal(15,4)
+  new_multisite_price                           Decimal  @db.Decimal(15,4)
+  products_virtual                              Boolean
+  products_date_added                           DateTime
+  products_last_modified                        DateTime?
+  products_date_available                       DateTime?
+  products_weight                               Float
+  products_status                               Boolean
+  cannot_print                                  Boolean?
+  products_tax_class_id                         Int
+  manufacturers_id                              Int?
+  manufacturers_name                            String   @db.VarChar(100)
+  products_ordered                              Float
+  products_quantity_order_min                   Float
+  products_quantity_order_units                 Float
+  products_priced_by_attribute                  Boolean
+  product_is_free                               Boolean
+  product_is_call                               Boolean
+  products_quantity_mixed                       Boolean
+  product_is_always_free_shipping               Boolean
+  products_qty_box_status                       Boolean
+  products_quantity_order_max                   Float
+  products_feature                              Int
+  product_id_recomended_1                       Int
+  product_id_recomended_2                       Int
+  product_id_recomended_3                       Int
+  products_meta_title                           String   @db.Text
+  products_meta_keywords                        String   @db.Text
+  products_meta_description                     String   @db.Text
+  a                                             String   @db.Char(1)
+  products_sort_order                           Int
+  products_discount_type                        Boolean
+  products_discount_type_from                   Boolean
+  products_price_sorter                         Decimal  @db.Decimal(15,4)
+  master_categories_id                          Int
+  products_to_categories                        String   @db.VarChar(5000)
+  products_mixed_discount_quantity              Boolean
+  metatags_title_status                         Boolean
+  metatags_products_name_status                 Boolean
+  metatags_model_status                         Boolean
+  metatags_price_status                         Boolean
+  metatags_title_tagline_status                 Boolean
+  products_class_id                             Int
+  old_product_link                              String   @db.VarChar(15)
+  product_keywords                              String?  @db.Text
+  new_url_structure                             String   @db.VarChar(50)
+  guid                                          String?  @db.VarChar(80)
+  hot_product                                   Boolean
+  products_location                             String   @db.Text
+  lsProductId                                   Int
+  copa                                          String   @db.VarChar(20)
+  toffs                                         String   @db.VarChar(20)
+  squad_list_id                                 Int
+  additional_img                                String   @db.Text
+  back_img                                      String   @db.VarChar(255)
+  stock_productgroup_id                         Int
+  gift_voucher                                  Int
+  barcode                                       String   @db.VarChar(255)
+  free_gift_id                                  Int
+  free_gift_start_date                          DateTime @db.Date
+  free_gift_end_date                            DateTime @db.Date
+  min_order_price                               Decimal  @db.Decimal(15,2)
+  product_group                                 String   @db.VarChar(255)
+  facebook_discount                             Int
+  products_rrp_price                            Decimal  @db.Decimal(15,4)
+  teamwear_product                              Boolean
+  teamwear_product_group                        String   @db.VarChar(255)
+  products_availability                         String   @db.VarChar(255)
+  hero_shirts                                   Boolean
+  subbuteo_product                              Int
+  subbuteo_font_size                            Int
+  cshop_cost_price                              Decimal  @db.Decimal(15,4)
+  quantity_map                                  Int
+  specials_status                               String   @db.VarChar(20)
+  specials_price                                Float?
+  groupname_id_1                                Int?
+  size_id_1                                     Int?
+  groupname_id_2                                Int?
+  size_id_2                                     Int?
+  bestsellers_count                             Int
+  bestsellers_page_count                        Int
+  ukrs_product                                  Boolean
+  football_souvenir_barcode                     String   @db.VarChar(13)
+  bestseller_update_date                        DateTime
+  out_of_stock                                  String   @db.VarChar(50)
+  conversion                                    Int
+  pfg_teamid                                    Int
+  rakuten_product                               String   @db.VarChar(50)
+  lazada_product                                Boolean
+  sms_total_quantity                            Int
+  show_related_products                         String   @db.VarChar(50)
+  first_related_product_id                      Int?
+  second_related_product_id                     Int?
+  third_related_product_id                      Int?
+  fourth_related_product_id                     Int?
+  related_product_check                         String   @db.VarChar(50)
+  updated_date                                  DateTime
+  Rakuten_price                                 Decimal  @db.Decimal(15,4)
+  is_product_on_ukrs                            String   @db.VarChar(50)
+  is_product_on_teamzo                          String   @db.VarChar(50)
+  product_code_type                             Int
+  seo_keywords                                  String   @db.VarChar(100)
+  seo_category_link                             String   @db.VarChar(100)
+  display_sort_order                            Int
+  hero_shirt_parent                             Int
+  daily_deals_ignored                           Boolean
+  hero_shirt_parent_quantity_map                Int
+  average_review_rating                         Float
+  href_link                                     String   @db.VarChar(200)
+  editors_id                                    Int
+  ukss_product_description                      String   @db.Text
+  list_style_description                        String   @db.Text
+  canvas_product                                String   @db.VarChar(50)
+  size_type                                     String   @db.VarChar(50)
+  invalid_for_marketplace                       String   @db.VarChar(50)
+  football_souvinier_flag                       Int?
+  usa_multisite                                 String   @db.VarChar(50)
+  virtual_product_type_id                       Int
+  delete_product_from_front_end                 Boolean
+  newer_version_product                         Int
+  is_product_on_airo_sportswear                 Int
+  is_product_on_ashtary                         Int
+  is_sms_product                                Int?
+  actual_sms_quantity                           Int
+  no_index_status                               String   @db.VarChar(50)
+  is_your_name                                  String   @db.VarChar(50)
+  can_available_on_category_page                Int
+  tshirt_to_virtual_product                     Int
+  rem_by_from_afm                               String?  @db.VarChar(50)
+  tshirt_group_id                               Int
+  bus_bulk_upload_supplier_id                   Int
+  store_id                                      Int?
+  multisite_product_id                          String?  @db.VarChar(50)
+  multisite_product_status                      Int?
+  multisite_product_url                         String?  @db.VarChar(350)
+  np_extra_info_size_guide                      String   @db.VarChar(5000)
+  np_extra_info_sleeve_length                   String   @db.VarChar(5000)
+  np_extra_info_color                           String   @db.VarChar(5000)
+  np_extra_info_product_type                    String   @db.VarChar(5000)
+  np_extra_info_season                          String   @db.VarChar(5000)
+  is_pre_own                                    Int
+  pre_own_parent                                Int
+  np_condition                                  String?  @db.VarChar(225)
+  np_agegroup                                   String?  @db.VarChar(225)
+  np_gender                                     String?  @db.VarChar(225)
+  np_sizetype                                   String?  @db.VarChar(225)
+  np_material                                   String?  @db.VarChar(225)
+  np_color                                      String?  @db.VarChar(225)
+  np_google_product_categories                  String?  @db.VarChar(225)
+  np_team                                       String?  @db.VarChar(225)
+  np_team_id                                    Int?
+  np_player_name                                String?  @db.VarChar(225)
+  np_league                                     String?  @db.VarChar(225)
+  np_continent                                  String?  @db.VarChar(225)
+  np_team_type                                  String?  @db.VarChar(225)
+  np_sizeguide                                  String?  @db.VarChar(225)
+  np_sleevelength                               String?  @db.VarChar(225)
+  np_season                                     String?  @db.VarChar(225)
+  np_shopify_product_type                       String?  @db.VarChar(225)
+  np_sort_order                                 Int
+  show_on_listing                               String   @db.VarChar(50)
+  fruugo_category_path                          String?  @db.VarChar(255)
+  catch_category_path                           String?  @db.VarChar(255)
+  np_team_nicknames                             String?  @db.Text
+  product_type_option_value                     String?  @db.VarChar(200)
+  np_best_seller_7days                          Int
+  np_best_seller_6months                        Int
+  np_best_seller_1year                          Int
+  np_best_seller_lifetime                       Int
+  np_sizes                                      String?  @db.Text
+  is_tshirt                                     Boolean?
+  products_to_categories_update_bit             Boolean?
+  np_design_keyword                             String?  @db.VarChar(100)
+  total_inventory                               Int?
+  total_ordered_qty                             Int?
+  total_inventory_cost                          Decimal? @db.Decimal(20,2)
+  last_order_date                               DateTime?
+  creator_id                                    Int?
+  creator_name                                  String?  @db.VarChar(255)
+  np_baselinker_creation_status                 String?  @db.VarChar(50)
+  np_baselinker_parent_id                       String?  @db.VarChar(50)
+  migration_date_added                          DateTime
+  migration_date_modified                       DateTime
+  baselinker_category_id                        Int?
+
+  // Relations
+  marketplaceListings                         MarketplaceListing[]
+
+  @@map("new_products")
+}
+
+// ============================================
+// Shopify Products Module
+// ============================================
+
+model SpProduct {
+  sp_id                          Int                      @id @default(autoincrement())
+  sm_store_id                    Int
+  sm_store_name                  String                   @db.VarChar(200)
+  np_products_id                 Int
+  sp_ukss_virtual_product_type_id Int                      @db.TinyInt
+  sp_product_id                  BigInt?                  @unique
+  sp_title                       String                   @db.Text
+  sp_body_html                   String                   @db.Text
+  sp_vendor                      String                   @db.VarChar(100)
+  sp_product_type                String                   @db.VarChar(255)
+  sp_handle                      String?                  @db.VarChar(255)
+  sp_published_at                DateTime
+  sp_status                      SpStatus                 @default(draft)
+  sp_create_product_status       SpCreateProductStatus
+  sp_ukss_status                 SpUkssStatus
+  sp_update_product_status       SpUpdateProductStatus    @default(finalized)
+  sp_update_inventory_status     SpUpdateInventoryStatus  @default(finalized)
+  sp_update_price_status         SpUpdatePriceStatus      @default(finalized)
+  sp_update_image_status         SpUpdateImageStatus      @default(finalized)
+  sp_special_status              SpSpecialStatus
+  sp_published_scope             SpPublishedScope         @default(global)
+  sp_tags                        String                   @db.Text
+  sp_option1                     String                   @db.VarChar(50)       @map("sp_option_1")
+  sp_option1_id                  BigInt?                                        @map("sp_option_1_id") 
+  sp_option1_values              String                   @db.Text
+  sp_option_2                    String?                  @db.VarChar(500)
+  sp_option_2_id                 BigInt?                  @db.UnsignedBigInt
+  sp_option2_values              String?                  @db.Text
+  sp_option_3                    String?                  @db.VarChar(50)
+  sp_option_3_id                 BigInt?                  @db.UnsignedBigInt
+  sp_option3_values              String?                  @db.Text
+  sp_google_custom_label0        String?                  @db.VarChar(255)
+  sp_google_custom_label1        String?                  @db.VarChar(255)
+  sp_google_custom_label2        String?                  @db.VarChar(255)
+  sp_google_custom_label3        String?                  @db.VarChar(255)
+  sp_google_custom_label4        String?                  @db.VarChar(255)
+  created_on_shopify             DateTime?
+  updated_on_shopify             DateTime?
+  sp_created_at                  DateTime
+  sp_updated_at                  DateTime                 @default(dbgenerated("'0000-00-00 00:00:00'"))
+  np_products_model              String?                  @db.VarChar(100)
+  np_league                      String?                  @db.VarChar(255)
+  np_team                        String?                  @db.VarChar(255)
+  np_agegroup                    String?                  @db.VarChar(255)
+  np_gender                      String?                  @db.VarChar(255)
+  np_color                       String?                  @db.VarChar(255)
+  np_sleevelength                String?                  @db.VarChar(255)
+  sp_update_metafields_status    SpUpdateMetafieldsStatus @default(modified)
+
+  // --- Indexes ---
+  @@index([sm_store_id])
+  @@index([np_products_id])
+  @@index([sp_status])
+  @@index([sp_ukss_status])
+  @@index([sp_update_product_status])
+  @@index([sp_update_inventory_status])
+  @@index([sp_update_price_status])
+  @@index([sp_update_image_status])
+  @@map("shopify_products")
+}
+
+enum SpStatus {
+  active
+  archived
+  draft
+}
+
+enum SpCreateProductStatus {
+  new
+  created
+  error
+  data_missing
+  to_be_delete
+  deleted
+}
+
+enum SpUkssStatus {
+  new
+  modified
+  removed
+  finalized
+  data_missing
+  error
+}
+
+enum SpUpdateProductStatus {
+  modified
+  finalized
+  error
+}
+
+enum SpUpdateInventoryStatus {
+  modified
+  finalized
+  error
+}
+
+enum SpUpdatePriceStatus {
+  modified
+  finalized
+  error
+}
+
+enum SpUpdateImageStatus {
+  modified
+  finalized
+  error
+}
+
+enum SpSpecialStatus {
+  Special
+  Not_Special @map("Not Special")
+}
+
+enum SpPublishedScope {
+  web
+  global
+}
+
+enum SpUpdateMetafieldsStatus {
+  modified
+  finalized
+  error
+}
+
+
+
+model ShopifyProductsImage {
+  spiId                 Int       @id @default(autoincrement()) @map("spi_id")
+  spId                  Int       @map("sp_id")
+  smStoreId             Int       @map("sm_store_id")
+  smStoreName           String    @db.VarChar(200) @map("sm_store_name")
+  npProductId           Int       @map("np_product_id")
+  spProductId           BigInt?   @map("sp_product_id")
+  spiImageId            BigInt?   @map("spi_image_id")
+  spiPosition           Int       @map("spi_position")
+  spiAlt                String    @db.VarChar(255) @map("spi_alt")
+  spiWidth              Int       @map("spi_width")
+  spiHeight             Int       @map("spi_height")
+  spiSrc                String    @db.Text @map("spi_src")
+  spiCreatedAt          DateTime  @default(now()) @db.DateTime @map("spi_created_at")
+  spiUpdatedAt          DateTime  @default(now()) @db.DateTime @map("spi_updated_at")
+  updatedOnShopify      DateTime? @db.DateTime @map("updated_on_shopify")
+
+  // Indexes inferred from the 'MUL' keys in your image layout
+  @@index([spId], map: "sp_id_idx")
+  @@index([smStoreId], map: "sm_store_id_idx")
+  @@index([npProductId], map: "np_product_id_idx")
+
+  // Maps the Prisma model name to the underlying database table name
+  @@map("shopify_products_images")
+}
+
+
+model shopifyCronRunHistory {
+  scrh_id         Int        @id @default(autoincrement())
+  scrh_store_id   Int?
+  scrh_name       String     @db.VarChar(255)
+  scrh_url        String     @db.VarChar(255)
+  scrh_start_time DateTime
+  scrh_end_time   DateTime?
+  scrh_status     ScrhStatus
+  scrh_created_at DateTime   @default(now()) @db.DateTime(0)
+  scrh_updated_at DateTime   @default(now()) @updatedAt @db.DateTime(0)
+
+  @@map("shopify_cron_run_history") 
+}
+
+enum ScrhStatus {
+  failed
+  InProgress
+  completed
+}
+
+model ShopifyTrackingHistory {
+  sth_id                  Int      @id @default(autoincrement())
+  store_id                Int
+  sp_product_id           String?  @db.VarChar(255)
+  spv_variation_id        String?  @db.VarChar(255)
+  sth_update_type         SthUpdateType
+  sth_new_value           String?  @db.Text
+  sth_status              SthStatus
+  sth_message             String?  @db.Text
+  sth_created_at          DateTime @default(now()) @db.DateTime(0)
+
+  @@map("shopify_tracking_history")
+}
+
+enum SthUpdateType {
+  product
+  price
+  inventory
+  image
+  inventoryPolicy
+}
+
+enum SthStatus {
+  success
+  failure
+}

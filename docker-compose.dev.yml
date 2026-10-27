@@ -1,0 +1,171 @@
+# ============================================
+# Docker Compose - Development Mode
+# ============================================
+# Usage: docker-compose -f docker-compose.dev.yml up
+#
+# Features:
+# - Hot reload for code changes (no rebuild needed)
+# - Source code mounted as volumes
+# - All dependencies included
+# ============================================
+
+services:
+  # ----------------------------------------
+  # Database Services (same as production)
+  # ----------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: admin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: admin_panel
+    ports:
+      - '15432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U admin -d admin_panel']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: admin-redis
+    restart: unless-stopped
+    ports:
+      - '16379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MariaDB (alternative to PostgreSQL)
+  mariadb:
+    image: mariadb:10.11
+    container_name: admin-mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-admin_panel}
+      MYSQL_USER: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-admin123}
+    ports:
+      - '13306:3306'
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+      --innodb-log-file-size=64M
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # minio and minio-init disabled - app uses local storage (STORAGE_PROVIDER=local)
+
+  # ----------------------------------------
+  # API - Development with hot reload
+  # ----------------------------------------
+  api:
+    image: node:20-alpine
+    container_name: admin-api-dev
+    working_dir: /app
+    command: sh -c "apk add --no-cache openssl openssl-dev && corepack enable && pnpm install && pnpm --filter @admin/shared build && cd apps/api && npx prisma generate && npx prisma db push && pnpm dev"
+    ports:
+      - '4000:4000'
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Exclude node_modules (use container's)
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/shared/node_modules
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://admin:admin123@postgres:5432/admin_panel
+      REDIS_URL: redis://redis:6379
+      # Storage - use local by default, or 's3' for MinIO
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_PATH: /app/uploads
+      STORAGE_LOCAL_URL_PREFIX: /uploads
+      API_URL: ${API_URL:-http://localhost:4000}
+      # S3/MinIO settings (only used when STORAGE_PROVIDER=s3)
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: uploads
+      S3_REGION: us-east-1
+      JWT_SECRET: dev-local-secret-for-development-only-not-production
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 7d
+      DEBENHAMS_CARRIER_MAP: '{"royal_mail":"ROYALMAIL"}'
+      EBAY_STORE_ID: 94
+      GLADE_SPORT_STORE_ID: 156
+      SELLER_DYNAMIC_STORE_ID: 154
+      STORE_CONTAINING_PHYSICAL_QUANTITY: ''
+      SHOPIFY_STORE_IDS_FOR_METAFIELDS_ON_CREATE: '142,146'
+      SHOPIFY_LOCATION_ID_146: '105648292106'
+      SHOPIFY_LOCATION_ID_153: '100235182377'
+      SHOPIFY_LOCATION_ID_154: '4561567801'
+      SHOPIFY_LOCATION_ID_155: '84508672090'
+      SHOPIFY_LOCATION_ID_156: '179701973340'
+      SHOPIFY_GRAPHQL_ENDPOINT_126: https://vintage-soccer.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_118: https://grandprix-clothing.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_124: https://directrugby.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_129: https://legends-football-shirts.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_135: https://i1u4r6-2n.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_136: https://1tmrq4-qj.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_134: https://3b0770-3.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_141: https://therugbyhq.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_142: https://mystery-shirts-club.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_145: https://mystery-shirt-club-official.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_146: https://toffsuk.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_153: https://tma-sports-live.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_154: https://absoluterugbystore.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_155: https://test-store-6ok3ylyf.myshopify.com/admin/api/2025-04/graphql.json
+      SHOPIFY_GRAPHQL_ENDPOINT_156: https://11fqst-3g.myshopify.com/admin/api/2025-04/graphql.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ----------------------------------------
+  # Web - Development with hot reload
+  # ----------------------------------------
+  web:
+    image: node:20-alpine
+    container_name: admin-web-dev
+    working_dir: /app
+    command: sh -c "apk add --no-cache openssl && corepack enable && pnpm install && pnpm --filter @admin/shared build && cd apps/web && pnpm dev --host 0.0.0.0"
+    ports:
+      - '3002:3002'
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Exclude node_modules
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/shared/node_modules
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:4000/api
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  mariadb_data:

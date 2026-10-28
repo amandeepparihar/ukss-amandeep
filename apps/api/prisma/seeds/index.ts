@@ -58,6 +58,10 @@ async function main() {
     'executive-dashboard',
     'seasons',
     'teams',
+    //LMS
+    'books',
+    'students',
+    'issues',
   ];
   const actions = ['view', 'create', 'edit', 'delete'];
 
@@ -82,7 +86,23 @@ async function main() {
   }
 
   // Create permissions for admin (most permissions except feature flags and settings)
-  const adminResources = ['users', 'roles', 'menu', 'files', 'notifications', 'exports', 'announcements', 'reconciliation', 'executive-dashboard', 'teams', 'seasons'];
+  const adminResources = [
+    'users',
+    'roles',
+    'menu',
+    'files',
+    'notifications',
+    'exports',
+    'announcements',
+    'reconciliation',
+    'executive-dashboard',
+    'teams',
+    'seasons',
+    // LMS
+    'books',
+    'students',
+    'issues',
+  ];
   for (const resource of adminResources) {
     for (const action of actions) {
       await prisma.permission.upsert({

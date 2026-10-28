@@ -24,7 +24,6 @@ import {
 // letters, spaces and ' . - only, starting with a letter
 const lettersOnly = /^[A-Za-z][A-Za-z\s'.-]*$/;
 
-// same rules as the api's createStudentSchema, so errors show before submitting
 const studentFormSchema = z.object({
   name: z
     .string()

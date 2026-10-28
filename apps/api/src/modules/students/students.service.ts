@@ -19,24 +19,30 @@ export type PaginatedStudents = {
 
 //add the public url of the photo to a student
 function withPhotoUrl(student: Student): StudentWithPhoto {
+  //if there is no photoFile return student data without photo
   if (!student.photoFile) {
     return { ...student, photoUrl: null };
   }
 
+  //e.g. http://localhost:3000/api/uploads/deep.jpg if(local)
   const photoUrl =
     getStorageProviderType() === 'local'
       ? `${config.API_URL}/api${config.STORAGE_LOCAL_URL_PREFIX}/${student.photoFile}`
       : storageProvider.getPublicUrl(student.photoFile);
 
+  //there is photo return student with photo
   return { ...student, photoUrl };
 }
 
 //the photo must be an image uploaded through post /api/files/upload
 async function assertPhotoFile(storageKey: string): Promise<void> {
+  //now if the image is upload through api/files/upload then the file table has the storagekey as photoFile(string)
+  //its status must be COMPLETED it means its uploaded
   const file = await prisma.file.findFirst({
     where: { storageKey: storageKey, status: 'COMPLETED' },
   });
 
+  //image is not found
   if (!file) {
     throw new BadRequestError('Photo not found, upload it again');
   }
@@ -48,6 +54,7 @@ async function assertPhotoFile(storageKey: string): Promise<void> {
 //delete the stored image and mark its File record deleted
 async function removePhotoFile(storageKey: string): Promise<void> {
   await storageProvider.delete(storageKey);
+  //find the image on the basis of storageKey in file table and mark its status as DELETED
   await prisma.file.updateMany({
     where: { storageKey: storageKey },
     data: { status: 'DELETED' },
@@ -105,12 +112,14 @@ export async function createStudent(input: CreateStudentInput): Promise<StudentW
     throw new ConflictError(`Student with rollNo: ${input.rollNo} already exists`);
   }
 
+  //if there is photoFile add it in the file table with storage key and status: COMPLETED
   if (input.photoFile) {
     await assertPhotoFile(input.photoFile);
   }
 
   const student = await prisma.student.create({ data: input });
 
+  //if there is photoFile we got student with photo else without photo
   return withPhotoUrl(student);
 }
 
@@ -134,13 +143,15 @@ export async function updateStudent(
     }
   }
 
-  const photoChanged =
-    input.photoFile !== undefined && input.photoFile !== existingStudent.photoFile;
+  //got a photo
+  const photoChanged = input.photoFile !== undefined;
 
+  //add the photoFile in the file table
   if (photoChanged && input.photoFile) {
     await assertPhotoFile(input.photoFile);
   }
 
+  //update the studnet
   const student = await prisma.student.update({
     where: { id: id },
     data: input,
@@ -162,6 +173,7 @@ export async function deleteStudent(id: string): Promise<void> {
     throw new NotFoundError('Student');
   }
 
+  //student must not have issued book
   const activeIssue = await prisma.issue.findFirst({
     where: { studentId: id, status: 'ISSUED' },
   });
@@ -171,6 +183,7 @@ export async function deleteStudent(id: string): Promise<void> {
 
   await prisma.student.delete({ where: { id: id } });
 
+  //if it does have photoFile remove it from the storage and mark the status DELETED in file
   if (existingStudent.photoFile) {
     await removePhotoFile(existingStudent.photoFile);
   }

@@ -1,7 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Shield, Users, Settings, FileText, Bell, History, Download, Flag, Menu, Lock } from 'lucide-react';
+import {
+  Shield,
+  Users,
+  Settings,
+  FileText,
+  Bell,
+  History,
+  Download,
+  Flag,
+  Menu,
+  Lock,
+  BookOpen,
+  GraduationCap,
+  ArrowLeftRight,
+} from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -100,9 +114,9 @@ const RESOURCES_CONFIG = [
     description: 'Feature flag management',
     icon: Flag,
   },
-  {id: 'books', label: 'Books', description: 'Books list'},
-  {id: 'students', label: 'Students', description: 'Students list'},
-  {id: 'issues', label: 'Issue', description: 'Issues list'}
+  { id: 'books', label: 'Books', description: 'Books list', icon: BookOpen },
+  { id: 'students', label: 'Students', description: 'Students list', icon: GraduationCap },
+  { id: 'issues', label: 'Issue', description: 'Issues list', icon: ArrowLeftRight },
 ] as const;
 
 const ACTIONS = [
@@ -215,7 +229,9 @@ export function PermissionsDialog({ open, onOpenChange, role }: PermissionsDialo
   };
 
   const isResourcePartiallySelected = (resource: string) => {
-    const selected = ACTIONS.some((a) => selectedPermissions.has(`${resource}:${a.id}` as PermissionKey));
+    const selected = ACTIONS.some((a) =>
+      selectedPermissions.has(`${resource}:${a.id}` as PermissionKey)
+    );
     const allSelected = isResourceFullySelected(resource);
     return selected && !allSelected;
   };
@@ -320,10 +336,15 @@ export function PermissionsDialog({ open, onOpenChange, role }: PermissionsDialo
 
         <div className="flex items-center justify-between pt-4 border-t">
           <div className="text-sm text-muted-foreground">
-            {selectedPermissions.size} permission{selectedPermissions.size !== 1 ? 's' : ''} selected
+            {selectedPermissions.size} permission{selectedPermissions.size !== 1 ? 's' : ''}{' '}
+            selected
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={mutation.isPending}
+            >
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={mutation.isPending}>

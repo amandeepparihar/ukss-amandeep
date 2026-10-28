@@ -53,6 +53,13 @@ const TeamFormPage = lazy(() => import('@/pages/teams/TeamFormPage').then(m => (
 const NewProductPage = lazy(() => import('@/pages/products/NewProductPage').then(m => ({ default: m.NewProductPage })));
 const CooReportPage = lazy(() => import('@/pages/products/CooReportPage').then(m => ({ default: m.CooReportPage })));
 const NotesPage = lazy(() => import('@/pages/notes/NotesPage').then(m => ({ default: m.NotesPage })));
+const BooksPage = lazy(() => import('@/pages/books/Books').then(m => ({ default: m.Books })));
+const BookFormPage = lazy(() => import('@/pages/books/BookFormPage').then(m => ({ default: m.BookFormPage })));
+const IssuesPage = lazy(() => import('@/pages/issues/Issues').then(m => ({default: m.Issues})));
+const StudentsPage = lazy(() => import('@/pages/students/Students').then(m => ({default: m.Students})));
+const StudentFormPage = lazy(() => import('@/pages/students/StudentFormPage').then(m => ({default: m.StudentFormPage})));
+const BookReportPage = lazy(() => import('@/pages/report/BookReport').then(m => ({default: m.BookReport})));
+const IssueReportPage = lazy(() => import("@/pages/report/IssueReport").then(m => ({default: m.IssueReport})));
 
 // Daily Deals
 const DailyDealsPage = lazy(() => import('@/pages/daily-deals/DailyDealsPage'));
@@ -173,7 +180,25 @@ export default function App() {
         <Route path="teams" element={<LazyPage><TeamsPage/></LazyPage>} />
         <Route path="teams/create" element={<LazyPage><TeamFormPage/></LazyPage>} />
         <Route path="teams/:id" element={<LazyPage><TeamFormPage/></LazyPage>} />
+
+        {/* Books route */}
+        <Route path="books" element={<LazyPage><BooksPage /></LazyPage>} />
+        <Route path="books/create" element={<LazyPage><BookFormPage /></LazyPage>} />
+        <Route path="books/:id" element={<LazyPage><BookFormPage /></LazyPage>} />
         
+        {/* Issues route */}
+        <Route path="issues" element={<LazyPage><IssuesPage /></LazyPage>} />
+        
+        {/* Students route */}
+        <Route path="students" element={<LazyPage><StudentsPage /></LazyPage>} />
+        <Route path="students/create" element={<LazyPage><StudentFormPage /></LazyPage>} />
+        <Route path="students/:id" element={<LazyPage><StudentFormPage /></LazyPage>} />
+
+        {/* Report route */}
+        <Route path="book-report" element={<LazyPage><BookReportPage /></LazyPage>} />
+        <Route path="issue-report" element={<LazyPage><IssueReportPage /></LazyPage>} />
+
+
         {/* Notes routes */}
         <Route path="notes" element={<LazyPage><NotesPage /></LazyPage>} />
 

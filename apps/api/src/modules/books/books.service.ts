@@ -96,10 +96,12 @@ function toMeta(page: number, pageSize: number, total: number): PaginationMeta {
 }
 
 function withCoverUrl(book: Book): BookWithCover {
+  //if there is no bookCover return book without cover(null)
   if (!book.bookCover) {
     return { ...book, coverUrl: null };
   }
 
+  //e.g. http://localhost:3000/api/uploads/book.jpg if(local)
   const coverUrl =
     getStorageProviderType() === 'local'
       ? `${config.API_URL}/api${config.STORAGE_LOCAL_URL_PREFIX}/${book.bookCover}`
@@ -108,11 +110,15 @@ function withCoverUrl(book: Book): BookWithCover {
   return { ...book, coverUrl };
 }
 
+//the photo must be an image uploaded through post /api/files/upload
 async function assertCoverFile(storageKey: string): Promise<void> {
+  //now if the image is upload through api/files/upload then the file table has the storagekey as photoFile(string)
+  //its status must be COMPLETED it means its uploaded
   const file = await prisma.file.findFirst({
     where: { storageKey: storageKey, status: 'COMPLETED' },
   });
 
+  //image not found
   if (!file) {
     throw new BadRequestError('Cover image not found, upload it again');
   }
@@ -124,6 +130,7 @@ async function assertCoverFile(storageKey: string): Promise<void> {
 //delete the stored image and mark its File record deleted
 async function removeCoverFile(storageKey: string): Promise<void> {
   await storageProvider.delete(storageKey);
+  //find the image on the basis of storageKey in file table and mark its status as DELETED
   await prisma.file.updateMany({
     where: { storageKey: storageKey },
     data: { status: 'DELETED' },
@@ -429,7 +436,7 @@ export async function createBulkBooks(fileBuffer: Buffer): Promise<BulkUploadRes
 
   const created = await prisma.book.createMany({
     data: toCreate.map((r) => r.data),
-    skipDuplicates: true, // still guards against a book added between the check and the insert
+    skipDuplicates: true,
   });
 
   failed.sort((a, b) => a.row - b.row);

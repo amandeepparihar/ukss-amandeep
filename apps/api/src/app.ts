@@ -67,6 +67,10 @@ import { sdTshirtsRoutes } from './modules/sd-tshirts/sd-tshirts.routes';
 import { seasonsRoutes } from './modules/seasons/seasons.routes';
 import { teamsRoutes } from './modules/teams/teams.routes';
 import { notesRoutes } from './modules/notes/notes.routes';
+//LMS Routes
+import { bookRoutes } from './modules/books/books.routes';
+import { studentRoutes } from './modules/students/students.routes';
+import { issueRoutes } from './modules/issues/issues.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -377,7 +381,12 @@ export async function buildApp() {
   await app.register(sdTshirtsRoutes, { prefix: '/api/seller-dynamics-listing' });
   await app.register(seasonsRoutes, { prefix: '/api/seasons' });
   await app.register(teamsRoutes, { prefix: '/api/teams' });
-  await app.register(notesRoutes, {prefix: '/api/notes'});
+  await app.register(notesRoutes, { prefix: '/api/notes' });
+
+  //LMS routes
+  await app.register(bookRoutes, { prefix: '/api/books' });
+  await app.register(studentRoutes, { prefix: '/api/students' });
+  await app.register(issueRoutes, { prefix: '/api/issues' });
 
   return app;
 }

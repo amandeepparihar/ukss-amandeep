@@ -44,9 +44,6 @@ export interface StudentListParams {
   search?: string;
 }
 
-//for fileupload
-const multipartHeaders = { headers: { 'Content-Type': 'multipart/form-data' } };
-
 export function useStudentsList(params: StudentListParams) {
   return useQuery<StudentsApiResponse>({
     queryKey: ['students', params],
@@ -109,12 +106,16 @@ export function useDeleteStudent() {
   });
 }
 
-export async function uploadStudentPhoto(file: File): Promise<{ storageKey: string; previewUrl: string }> {
+export async function uploadStudentPhoto(
+  file: File
+): Promise<{ storageKey: string; previewUrl: string }> {
   const form = new FormData();
   form.append('folder', 'students');
   form.append('file', file);
 
-  const response = await api.post('/files/upload', form, multipartHeaders);
+  const response = await api.post('/files/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 
   return {
     storageKey: response.data.data.storageKey,

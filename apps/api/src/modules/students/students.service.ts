@@ -1,10 +1,14 @@
-import { Student, Prisma } from '@prisma/client';
-import { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './students.schema';
+import { Prisma, type Student } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { BadRequestError, ConflictError, NotFoundError } from '../../lib/errors';
+import { storageProvider, getStorageProviderType } from '../../lib/storage';
+import { config } from '../../config';
+import type { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './students.schema';
+
+export type StudentWithPhoto = Student & { photoUrl: string | null };
 
 export type PaginatedStudents = {
-  data: Student[];
+  data: StudentWithPhoto[];
   meta: {
     page: number;
     pageSize: number;
@@ -12,6 +16,43 @@ export type PaginatedStudents = {
     totalPages: number;
   };
 };
+
+//add the public url of the photo to a student
+function withPhotoUrl(student: Student): StudentWithPhoto {
+  if (!student.photoFile) {
+    return { ...student, photoUrl: null };
+  }
+
+  const photoUrl =
+    getStorageProviderType() === 'local'
+      ? `${config.API_URL}/api${config.STORAGE_LOCAL_URL_PREFIX}/${student.photoFile}`
+      : storageProvider.getPublicUrl(student.photoFile);
+
+  return { ...student, photoUrl };
+}
+
+//the photo must be an image uploaded through post /api/files/upload
+async function assertPhotoFile(storageKey: string): Promise<void> {
+  const file = await prisma.file.findFirst({
+    where: { storageKey: storageKey, status: 'COMPLETED' },
+  });
+
+  if (!file) {
+    throw new BadRequestError('Photo not found, upload it again');
+  }
+  if (!file.mimeType.startsWith('image/')) {
+    throw new BadRequestError('Photo must be an image');
+  }
+}
+
+//delete the stored image and mark its File record deleted
+async function removePhotoFile(storageKey: string): Promise<void> {
+  await storageProvider.delete(storageKey);
+  await prisma.file.updateMany({
+    where: { storageKey: storageKey },
+    data: { status: 'DELETED' },
+  });
+}
 
 //get all students
 export async function listStudents(query: ListStudentsQuery): Promise<PaginatedStudents> {
@@ -28,14 +69,14 @@ export async function listStudents(query: ListStudentsQuery): Promise<PaginatedS
     prisma.student.count({ where }),
     prisma.student.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [query.sortBy]: query.sortOrder },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
   ]);
 
   return {
-    data,
+    data: data.map(withPhotoUrl),
     meta: {
       page: query.page,
       pageSize: query.pageSize,
@@ -46,63 +87,91 @@ export async function listStudents(query: ListStudentsQuery): Promise<PaginatedS
 }
 
 //get student by id
-export async function getStudent(id: string): Promise<Student> {
+export async function getStudent(id: string): Promise<StudentWithPhoto> {
   const student = await prisma.student.findUnique({ where: { id: id } });
 
   if (!student) {
-    throw new NotFoundError('Student Not found');
+    throw new NotFoundError('Student');
   }
 
-  return student;
+  return withPhotoUrl(student);
 }
 
 //create student
-export async function createStudent(input: CreateStudentInput): Promise<Student> {
+export async function createStudent(input: CreateStudentInput): Promise<StudentWithPhoto> {
   const existingStudent = await prisma.student.findUnique({ where: { rollNo: input.rollNo } });
 
   if (existingStudent) {
     throw new ConflictError(`Student with rollNo: ${input.rollNo} already exists`);
   }
 
-  return await prisma.student.create({
-    data: { ...input },
-  });
+  if (input.photoFile) {
+    await assertPhotoFile(input.photoFile);
+  }
+
+  const student = await prisma.student.create({ data: input });
+
+  return withPhotoUrl(student);
 }
 
 //update student
-export async function updateStudent(id: string, input: UpdateStudentInput): Promise<Student> {
+export async function updateStudent(
+  id: string,
+  input: UpdateStudentInput
+): Promise<StudentWithPhoto> {
   const existingStudent = await prisma.student.findUnique({ where: { id: id } });
 
   if (!existingStudent) {
-    throw new NotFoundError(`Student with id: ${id} not found`);
+    throw new NotFoundError('Student');
   }
 
-  //if the new rollNo is already of someother student
+  //the new rollNo must not belong to some other student
   if (input.rollNo !== existingStudent.rollNo) {
     const rollNoTaken = await prisma.student.findUnique({ where: { rollNo: input.rollNo } });
 
     if (rollNoTaken) {
-      throw new ConflictError(`rollNo: ${rollNoTaken} is already taken`);
+      throw new ConflictError(`rollNo: ${input.rollNo} is already taken`);
     }
   }
 
+  const photoChanged =
+    input.photoFile !== undefined && input.photoFile !== existingStudent.photoFile;
+
+  if (photoChanged && input.photoFile) {
+    await assertPhotoFile(input.photoFile);
+  }
+
   const student = await prisma.student.update({
-    where: { id },
-    data: { ...input },
+    where: { id: id },
+    data: input,
   });
 
-  return student;
+  //old image removeit
+  if (photoChanged && existingStudent.photoFile) {
+    await removePhotoFile(existingStudent.photoFile);
+  }
+
+  return withPhotoUrl(student);
 }
 
 //delete student
 export async function deleteStudent(id: string): Promise<void> {
-  const existingStudent = await prisma.student.findUnique({ where: { id } });
+  const existingStudent = await prisma.student.findUnique({ where: { id: id } });
 
   if (!existingStudent) {
-    throw new NotFoundError(`Student with id: ${id} not exists`);
+    throw new NotFoundError('Student');
   }
 
-  await prisma.student.delete({ where: { id } });
-}
+  const activeIssue = await prisma.issue.findFirst({
+    where: { studentId: id, status: 'ISSUED' },
+  });
+  if (activeIssue) {
+    throw new ConflictError('Student has a book issued and cannot be deleted');
+  }
 
-//get student photo file for download
+  await prisma.student.delete({ where: { id: id } });
+
+  if (existingStudent.photoFile) {
+    await removePhotoFile(existingStudent.photoFile);
+  }
+}

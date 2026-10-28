@@ -72,7 +72,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
   );
 
   //POST create student
-  app.post('/', { preHandler: [app.requirePermission('books:create')] }, async (request, reply) => {
+  app.post('/', { preHandler: [app.requirePermission('students:create')] }, async (request, reply) => {
     getLogger('students-request').info(
       { method: 'POST', url: request.url, query: request.query },
       'incoming request'
@@ -94,7 +94,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   //PUT update student
-  app.put('/:id', { preHandler: [app.requirePermission('books:edit')] }, async (request, reply) => {
+  app.put('/:id', { preHandler: [app.requirePermission('students:edit')] }, async (request, reply) => {
     getLogger('student-request').info(
       { method: 'PUT', url: request.url, body: request.body },
       'incoming request'
@@ -120,7 +120,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
   //DELETE student
   app.delete(
     '/:id',
-    { preHandler: [app.requirePermission('books:delete')] },
+    { preHandler: [app.requirePermission('students:delete')] },
     async (request, reply) => {
       getLogger('students').info(
         { method: 'DEL', url: request.url, body: request.body },
@@ -129,7 +129,7 @@ export const studentRoutes: FastifyPluginAsync = async (app) => {
 
       try {
         const { id } = studentIdSchema.parse(request.params);
-        const result = service.deleteStudent(id);
+        const result = await service.deleteStudent(id);
 
         getLogger('student').info({ status: 200, studentId: id }, 'student deleted successfully');
 

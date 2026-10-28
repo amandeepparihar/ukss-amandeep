@@ -1,10 +1,14 @@
-import { Issue, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { CreateIssueInput, ListIssueInput } from './issues.schema';
 import { ConflictError, NotFoundError } from '../../lib/errors';
 
+const withBookAndStudent = { book: true, student: true } satisfies Prisma.IssueInclude;
+
+export type IssueWithRelations = Prisma.IssueGetPayload<{ include: typeof withBookAndStudent }>;
+
 export type PaginatedIssue = {
-  data: Issue[];
+  data: IssueWithRelations[];
   meta: {
     page: number;
     pageSize: number;
@@ -15,15 +19,20 @@ export type PaginatedIssue = {
 
 //get all issues
 export async function listIssues(query: ListIssueInput): Promise<PaginatedIssue> {
-  const where = query.status ? { status: query.status } : {};
+  const where: Prisma.IssueWhereInput = {
+    status: query.status,
+    bookId: query.bookId,
+    studentId: query.studentId,
+  };
+
   const [total, data] = await Promise.all([
     prisma.issue.count({ where }),
     prisma.issue.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [query.sortBy]: query.sortOrder },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
-      include: { book: true, student: true },
+      include: withBookAndStudent,
     }),
   ]);
 
@@ -38,62 +47,69 @@ export async function listIssues(query: ListIssueInput): Promise<PaginatedIssue>
   };
 }
 
-//return a book
-export async function returnIssue(id: string): Promise<Issue> {
-  const issue = await prisma.issue.findUnique({
-    where: { id: id },
-  });
+//issue a book
+export async function createIssue(input: CreateIssueInput): Promise<IssueWithRelations> {
+  const student = await prisma.student.findUnique({ where: { id: input.studentId } });
 
-  if (!issue) {
-    throw new NotFoundError('Issue not found');
+  if (!student) {
+    throw new NotFoundError('Student');
   }
 
-  if (issue.status === 'RETURNED') {
-    throw new ConflictError('Book is already returned');
-  }
+  return prisma.$transaction(async (tx) => {
+    const taken = await tx.book.updateMany({
+      where: { id: input.bookId, quantity: { gt: 0 } },
+      data: { quantity: { decrement: 1 } },
+    });
 
-  return await prisma.issue.update({
-    where: { id: id },
-    data: {
-      status: 'RETURNED',
-      returnDate: new Date(),
-    },
-    include: { book: true, student: true },
+    if (taken.count === 0) {
+      const book = await tx.book.findUnique({ where: { id: input.bookId } });
+      if (!book) {
+        throw new NotFoundError('Book');
+      }
+      throw new ConflictError('No copies of this book are available');
+    }
+
+    return tx.issue.create({
+      data: {
+        bookId: input.bookId,
+        studentId: input.studentId,
+        issueDate: new Date(), //book can only be issued today
+      },
+      include: withBookAndStudent,
+    });
   });
 }
 
-//create issue
-export async function createIssue(input: CreateIssueInput): Promise<Issue> {
-  //book must exists
-  const book = await prisma.book.findUnique({
-    where: { id: input.bookId },
-  });
-  if (!book) {
-    throw new NotFoundError('Book does not exists');
-  }
+//return a book
+export async function returnIssue(id: string): Promise<IssueWithRelations> {
+  return prisma.$transaction(async (tx) => {
+    const returned = await tx.issue.updateMany({
+      where: { id: id, status: 'ISSUED' },
+      data: { status: 'RETURNED', returnDate: new Date() },
+    });
 
-  //student must exists
-  const student = await prisma.student.findUnique({
-    where: { id: input.studentId },
-  });
-  if (!student) {
-    throw new NotFoundError('Student does not exists');
-  }
+    if (returned.count === 0) {
+      const issue = await tx.issue.findUnique({ where: { id: id } });
+      if (!issue) {
+        throw new NotFoundError('Issue');
+      }
+      throw new ConflictError('Book is already returned');
+    }
 
-  //book must not already issued
-  const bookIssued = await prisma.issue.findFirst({
-    where: { bookId: input.bookId, status: 'ISSUED' },
-  });
-  if (bookIssued) {
-    throw new NotFoundError('Book is already Issued');
-  }
+    // only the bookId is needed to put the copy back
+    const { bookId } = await tx.issue.findUniqueOrThrow({
+      where: { id: id },
+      select: { bookId: true },
+    });
 
-  return await prisma.issue.create({
-    data: {
-      bookId: input.bookId,
-      studentId: input.studentId,
-      issueDate: input.issueDate,
-    },
-    include: { book: true, student: true },
+    await tx.book.update({
+      where: { id: bookId },
+      data: { quantity: { increment: 1 } },
+    });
+
+    return tx.issue.findUniqueOrThrow({
+      where: { id: id },
+      include: withBookAndStudent,
+    });
   });
 }
